@@ -1,29 +1,9 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+// Force dynamic rendering - this is the key fix
+export const dynamic = 'force-dynamic';
 
 export default function Home() {
-  const router = useRouter();
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session) {
-        router.push('/dashboard');
-      } else {
-        router.push('/login');
-      }
-    };
-
-    checkAuth();
-  }, [router]);
-
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="spinner" />
-    </div>
-  );
+  // Server-side redirect to login
+  redirect('/login');
 }
