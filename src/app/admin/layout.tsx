@@ -1,5 +1,5 @@
 import DashboardLayoutClient from '../dashboard/DashboardLayoutClient';
 
-export default function TeamsLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return <DashboardLayoutClient>{children}</DashboardLayoutClient>;
 }
