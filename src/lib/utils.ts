@@ -1,240 +1,197 @@
-import { clsx, type ClassValue } from 'clsx';
-import { format, differenceInDays, parseISO } from 'date-fns';
-import type { Project, ProjectPriority, ProjectStatus, DashboardStats } from '@/types';
+import { type ClassValue, clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
-// Class name utility
 export function cn(...inputs: ClassValue[]) {
-  return clsx(inputs);
+  return twMerge(clsx(inputs));
 }
 
-// Date formatting
-export function formatDate(date: string | Date | null): string {
-  if (!date) return 'N/A';
-  const d = typeof date === 'string' ? parseISO(date) : date;
-  return format(d, 'dd MMM yyyy');
-}
-
-export function formatDateTime(date: string | Date | null): string {
-  if (!date) return 'N/A';
-  const d = typeof date === 'string' ? parseISO(date) : date;
-  return format(d, 'dd MMM yyyy, HH:mm');
-}
-
-// Calculate remaining days
-export function getRemainingDays(deadline: string | null): number {
-  if (!deadline) return 0;
-  return differenceInDays(parseISO(deadline), new Date());
-}
-
-// Get deadline status
-export function getDeadlineStatus(deadline: string | null, status: ProjectStatus): 'overdue' | 'urgent' | 'warning' | 'normal' {
-  if (!deadline || status === 'DONE') return 'normal';
-  const days = getRemainingDays(deadline);
-  if (days < 0) return 'overdue';
-  if (days <= 3) return 'urgent';
-  if (days <= 7) return 'warning';
-  return 'normal';
-}
-
-// Priority colors
-export const priorityColors: Record<ProjectPriority, { bg: string; text: string; border: string }> = {
-  critical: { bg: 'bg-red-500/15', text: 'text-red-500', border: 'border-red-500/30' },
-  high: { bg: 'bg-orange-500/15', text: 'text-orange-500', border: 'border-orange-500/30' },
-  medium: { bg: 'bg-yellow-500/15', text: 'text-yellow-500', border: 'border-yellow-500/30' },
-  low: { bg: 'bg-green-500/15', text: 'text-green-500', border: 'border-green-500/30' },
-};
-
-// Status colors
-export const statusColors: Record<ProjectStatus, { bg: string; text: string; border: string }> = {
-  'IN PROGRESS': { bg: 'bg-tangent-blue/15', text: 'text-tangent-blue', border: 'border-tangent-blue/30' },
-  'DONE': { bg: 'bg-green-500/15', text: 'text-green-500', border: 'border-green-500/30' },
-  'TBC': { bg: 'bg-yellow-500/15', text: 'text-yellow-500', border: 'border-yellow-500/30' },
-  'ON HOLD': { bg: 'bg-gray-500/15', text: 'text-gray-400', border: 'border-gray-500/30' },
-};
-
-// Deadline status colors
-export const deadlineColors = {
-  overdue: { bg: 'bg-red-500/15', text: 'text-red-500' },
-  urgent: { bg: 'bg-orange-500/15', text: 'text-orange-500' },
-  warning: { bg: 'bg-yellow-500/15', text: 'text-yellow-500' },
-  normal: { bg: 'bg-green-500/15', text: 'text-green-500' },
-};
-
-// Progress bar color
-export function getProgressColor(progress: number): string {
-  if (progress >= 75) return 'bg-green-500';
-  if (progress >= 50) return 'bg-tangent-blue';
-  if (progress >= 25) return 'bg-yellow-500';
-  return 'bg-red-500';
-}
-
-// Calculate dashboard statistics
-export function calculateStats(projects: Project[]): DashboardStats {
-  const now = new Date();
-  
-  const totalProjects = projects.length;
-  const completedProjects = projects.filter(p => p.status === 'DONE').length;
-  const inProgressProjects = projects.filter(p => p.status === 'IN PROGRESS').length;
-  const overdueProjects = projects.filter(p => {
-    if (!p.deadline || p.status === 'DONE') return false;
-    return new Date(p.deadline) < now;
-  }).length;
-  
-  // Projects by stage
-  const projectsByStage: Record<string, number> = {};
-  projects.forEach(p => {
-    projectsByStage[p.stage] = (projectsByStage[p.stage] || 0) + 1;
-  });
-  
-  // Projects by priority
-  const projectsByPriority: Record<string, number> = {};
-  projects.forEach(p => {
-    projectsByPriority[p.priority] = (projectsByPriority[p.priority] || 0) + 1;
-  });
-  
-  // Projects by status
-  const projectsByStatus: Record<string, number> = {};
-  projects.forEach(p => {
-    projectsByStatus[p.status] = (projectsByStatus[p.status] || 0) + 1;
-  });
-  
-  // Weekly submissions (last 4 weeks)
-  const weeklySubmissions: { week: string; count: number }[] = [];
-  for (let i = 3; i >= 0; i--) {
-    const weekStart = new Date(now);
-    weekStart.setDate(weekStart.getDate() - (i * 7 + 7));
-    const weekEnd = new Date(now);
-    weekEnd.setDate(weekEnd.getDate() - (i * 7));
-    
-    const count = projects.filter(p => {
-      if (!p.deadline) return false;
-      const deadline = new Date(p.deadline);
-      return deadline >= weekStart && deadline < weekEnd;
-    }).length;
-    
-    weeklySubmissions.push({
-      week: `Week ${4 - i}`,
-      count,
-    });
-  }
-  
-  return {
-    totalProjects,
-    completedProjects,
-    inProgressProjects,
-    overdueProjects,
-    projectsByStage,
-    projectsByPriority,
-    projectsByStatus,
-    weeklySubmissions,
-  };
-}
-
-// Filter projects
-export function filterProjects(
-  projects: Project[],
-  filters: {
-    search?: string;
-    stage?: string;
-    priority?: string;
-    status?: string;
-    team?: string;
-  }
-): Project[] {
-  return projects.filter(project => {
-    // Search filter
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      const matchesSearch = 
-        project.project_name.toLowerCase().includes(searchLower) ||
-        project.description?.toLowerCase().includes(searchLower) ||
-        project.team_name?.toLowerCase().includes(searchLower);
-      if (!matchesSearch) return false;
-    }
-    
-    // Stage filter
-    if (filters.stage && filters.stage !== 'all' && project.stage !== filters.stage) {
-      return false;
-    }
-    
-    // Priority filter
-    if (filters.priority && filters.priority !== 'all' && project.priority !== filters.priority) {
-      return false;
-    }
-    
-    // Status filter
-    if (filters.status && filters.status !== 'all' && project.status !== filters.status) {
-      return false;
-    }
-    
-    // Team filter
-    if (filters.team && filters.team !== 'all' && project.team_id !== filters.team) {
-      return false;
-    }
-    
-    return true;
-  });
-}
-
-// Export to Excel
-export async function exportToExcel(
-  data: any[],
-  filename: string,
-  sheetName: string = 'Sheet1'
-) {
-  const XLSX = await import('xlsx');
-  
-  const worksheet = XLSX.utils.json_to_sheet(data);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-  
-  // Generate filename with date
-  const dateStr = format(new Date(), 'yyyy-MM-dd');
-  XLSX.writeFile(workbook, `${filename}_${dateStr}.xlsx`);
-}
-
-// Prepare project data for export
-export function prepareProjectsForExport(projects: Project[]) {
-  return projects.map(p => ({
-    'Project Name': p.project_name,
-    'Description': p.description || '',
-    'Stage': p.stage,
-    'Priority': p.priority.toUpperCase(),
-    'Status': p.status,
-    'Team': p.team_name || 'Unassigned',
-    'Team Lead': p.team_lead || 'N/A',
-    'Deadline': p.deadline ? formatDate(p.deadline) : 'N/A',
-    'Remaining Days': p.remaining_days ?? getRemainingDays(p.deadline),
-    'Progress': `${p.progress}%`,
-    'Criticality': p.criticality,
-    'Created': formatDate(p.created_at),
-  }));
-}
-
-// Generate random color for avatars
-export function getAvatarColor(name: string): string {
-  const colors = [
-    'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-500',
-    'bg-lime-500', 'bg-green-500', 'bg-emerald-500', 'bg-teal-500',
-    'bg-cyan-500', 'bg-sky-500', 'bg-blue-500', 'bg-indigo-500',
-    'bg-violet-500', 'bg-purple-500', 'bg-fuchsia-500', 'bg-pink-500',
-  ];
-  
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  
-  return colors[Math.abs(hash) % colors.length];
-}
-
-// Get initials from name
 export function getInitials(name: string | null | undefined): string {
   if (!name) return '?';
   return name
     .split(' ')
-    .map(word => word.charAt(0))
+    .map((n) => n[0])
     .join('')
     .toUpperCase()
     .slice(0, 2);
+}
+
+export function getAvatarColor(name: string | null | undefined): string {
+  const colors = [
+    'from-[#00AEEF] to-[#0077a3]',
+    'from-purple-500 to-violet-600',
+    'from-green-500 to-emerald-600',
+    'from-amber-500 to-orange-500',
+    'from-red-500 to-rose-600',
+    'from-pink-500 to-rose-500',
+    'from-indigo-500 to-purple-600',
+    'from-teal-500 to-cyan-500',
+  ];
+  
+  if (!name) return colors[0];
+  const index = name.charCodeAt(0) % colors.length;
+  return colors[index];
+}
+
+// Date formatting utilities
+export function formatDate(date: string | null | undefined): string {
+  if (!date) return '-';
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return '-';
+  }
+}
+
+export function formatDateShort(date: string | null | undefined): string {
+  if (!date) return '-';
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return '-';
+  }
+}
+
+export function formatDateInput(date: string | null | undefined): string {
+  if (!date) return '';
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString().split('T')[0];
+  } catch {
+    return '';
+  }
+}
+
+export function formatDateTime(date: string | null | undefined): string {
+  if (!date) return '-';
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '-';
+  }
+}
+
+export function formatRelativeTime(date: string | null | undefined): string {
+  if (!date) return 'Never';
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return 'Never';
+    
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    return formatDate(date);
+  } catch {
+    return 'Never';
+  }
+}
+
+export function isOverdue(date: string | null | undefined, status?: string): boolean {
+  if (!date) return false;
+  if (status === 'completed' || status === 'done' || status === 'submitted' || status === 'approved') return false;
+  
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return false;
+    return d < new Date();
+  } catch {
+    return false;
+  }
+}
+
+export function getDaysUntil(date: string | null | undefined): number | null {
+  if (!date) return null;
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return null;
+    const now = new Date();
+    const diffMs = d.getTime() - now.getTime();
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  } catch {
+    return null;
+  }
+}
+
+// Progress utilities
+export function calculateProgress(completed: number, total: number): number {
+  if (total === 0) return 0;
+  return Math.round((completed / total) * 100);
+}
+
+export function getProgressColor(progress: number): string {
+  if (progress >= 80) return 'from-green-500 to-emerald-500';
+  if (progress >= 50) return 'from-[#00AEEF] to-cyan-500';
+  if (progress >= 25) return 'from-yellow-500 to-amber-500';
+  return 'from-red-500 to-rose-500';
+}
+
+// Status utilities
+export function getStatusColor(status: string): string {
+  const colors: Record<string, string> = {
+    active: 'bg-green-500',
+    in_progress: 'bg-blue-500',
+    on_hold: 'bg-yellow-500',
+    completed: 'bg-emerald-500',
+    cancelled: 'bg-red-500',
+    todo: 'bg-gray-500',
+    in_review: 'bg-purple-500',
+    blocked: 'bg-red-500',
+    done: 'bg-green-500',
+    pending: 'bg-yellow-500',
+    submitted: 'bg-green-500',
+    approved: 'bg-emerald-500',
+    rejected: 'bg-red-500',
+  };
+  return colors[status] || 'bg-gray-500';
+}
+
+export function getPriorityColor(priority: string): string {
+  const colors: Record<string, string> = {
+    urgent: 'text-red-400 bg-red-500/15 border border-red-500/30',
+    critical: 'text-red-400 bg-red-500/15 border border-red-500/30',
+    high: 'text-orange-400 bg-orange-500/15 border border-orange-500/30',
+    medium: 'text-yellow-400 bg-yellow-500/15 border border-yellow-500/30',
+    low: 'text-green-400 bg-green-500/15 border border-green-500/30',
+  };
+  return colors[priority] || 'text-gray-400 bg-gray-500/15 border border-gray-500/30';
+}
+
+// Debounce utility
+export function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout | null = null;
+  
+  return (...args: Parameters<T>) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
 }
