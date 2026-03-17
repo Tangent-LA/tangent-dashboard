@@ -7,7 +7,7 @@ import { Shield, Users, FolderKanban, Plus, Edit, Trash2, X, Loader2, CheckCircl
 import { useStore } from '@/lib/store';
 import { getSupabase } from '@/lib/supabase';
 import { cn, getInitials, getAvatarColor } from '@/lib/utils';
-import type { User, Project, Team, UserRole, ProjectStage, ProjectPriority, ProjectStatus } from '@/types';
+import type { User, Project, ProjectWithDetails, Team, UserRole, ProjectStage, ProjectPriority, ProjectStatus } from '@/types';
 import toast from 'react-hot-toast';
 
 const tabs = [
@@ -62,7 +62,7 @@ export default function AdminClient() {
       if (teamsData) setTeams(teamsData as Team[]);
 
       const { data: projectsData } = await supabase.from('projects_with_details').select('*').order('created_at', { ascending: false });
-      if (projectsData) setProjects(projectsData as Project[]);
+      if (projectsData) setProjects(projectsData as ProjectWithDetails[]);
     } catch (error) {
       toast.error('Failed to load data');
     } finally {
