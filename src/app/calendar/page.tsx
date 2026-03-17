@@ -1,58 +1,62 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import Link from 'next/link';
 import {
+  Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
-  Calendar as CalendarIcon,
-  Clock,
-  FolderKanban,
-  Users,
-  FileBox,
-  AlertTriangle,
   Plus,
+  FolderKanban,
+  Building2,
+  ListTodo,
+  AlertTriangle,
+  Clock,
 } from 'lucide-react';
 
-type CalendarItem = {
+type Project = {
+  id: string;
+  project_name: string;
+  project_end_date: string | null;
+  project_status: string;
+  project_priority: string;
+  teams?: { team_name: string; color: string } | null;
+};
+
+type Task = {
+  id: string;
+  title: string;
+  due_date: string | null;
+  status: string;
+  priority: string;
+};
+
+type BimDeliverable = {
+  id: string;
+  deliverable_name: string;
+  due_date: string | null;
+  status: string;
+};
+
+type CalendarEvent = {
   id: string;
   title: string;
   date: string;
-  type: 'task' | 'project' | 'bim';
+  type: 'project' | 'task' | 'deliverable';
   priority?: string;
   status?: string;
-  teamName?: string;
-  teamColor?: string;
-  discipline?: string;
-};
-
-const typeColors = {
-  task: 'border-l-blue-500',
-  project: 'border-l-purple-500',
-  bim: 'border-l-emerald-500',
-};
-
-const typeIcons = {
-  task: Clock,
-  project: FolderKanban,
-  bim: FileBox,
-};
-
-const priorityColors: Record<string, string> = {
-  urgent: 'bg-red-500',
-  critical: 'bg-red-500',
-  high: 'bg-orange-500',
-  medium: 'bg-yellow-500',
-  low: 'bg-green-500',
+  color: string;
 };
 
 export default function CalendarPage() {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [calendarItems, setCalendarItems] = useState<CalendarItem[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [deliverables, setDeliverables] = useState<BimDeliverable[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [filterType, setFilterType] = useState<'all' | 'task' | 'project' | 'bim'>('all');
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [viewFilter, setViewFilter] = useState<'all' | 'projects' | 'tasks' | 'deliverables'>('all');
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -60,380 +64,387 @@ export default function CalendarPage() {
   );
 
   useEffect(() => {
-    fetchCalendarData();
-  }, [currentDate]);
+    fetchData();
+  }, []);
 
-  const fetchCalendarData = async () => {
+  const fetchData = async () => {
     setLoading(true);
-    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-    
-    const startStr = startOfMonth.toISOString().split('T')[0];
-    const endStr = endOfMonth.toISOString().split('T')[0];
+    const [projectsRes, tasksRes, deliverablesRes] = await Promise.all([
+      supabase.from('projects').select('*, teams(team_name, color)'),
+      supabase.from('tasks').select('*'),
+      supabase.from('bim_deliverables').select('*'),
+    ]);
 
-    const items: CalendarItem[] = [];
-
-    // Fetch Tasks
-    const { data: tasks } = await supabase
-      .from('tasks')
-      .select('id, title, due_date, status, priority')
-      .gte('due_date', startStr)
-      .lte('due_date', endStr);
-
-    if (tasks) {
-      tasks.forEach((task) => {
-        items.push({
-          id: task.id,
-          title: task.title,
-          date: task.due_date,
-          type: 'task',
-          priority: task.priority,
-          status: task.status,
-        });
-      });
-    }
-
-    // Fetch Projects with Team info
-    const { data: projects } = await supabase
-      .from('projects')
-      .select('id, project_name, project_end_date, project_status, project_priority, teams(team_name, color)')
-      .gte('project_end_date', startStr)
-      .lte('project_end_date', endStr);
-
-    if (projects) {
-      projects.forEach((project: any) => {
-        items.push({
-          id: project.id,
-          title: project.project_name,
-          date: project.project_end_date,
-          type: 'project',
-          priority: project.project_priority,
-          status: project.project_status,
-          teamName: project.teams?.team_name || 'Unassigned',
-          teamColor: project.teams?.color || '#6b7280',
-        });
-      });
-    }
-
-    // Fetch BIM Deliverables with Project and Team info
-    const { data: bimDeliverables } = await supabase
-      .from('bim_deliverables')
-      .select('id, deliverable_name, due_date, status, discipline, projects(project_name, teams(team_name, color))')
-      .gte('due_date', startStr)
-      .lte('due_date', endStr);
-
-    if (bimDeliverables) {
-      bimDeliverables.forEach((bim: any) => {
-        items.push({
-          id: bim.id,
-          title: bim.deliverable_name,
-          date: bim.due_date,
-          type: 'bim',
-          status: bim.status,
-          discipline: bim.discipline,
-          teamName: bim.projects?.teams?.team_name || 'Unassigned',
-          teamColor: bim.projects?.teams?.color || '#6b7280',
-        });
-      });
-    }
-
-    setCalendarItems(items);
+    if (projectsRes.data) setProjects(projectsRes.data);
+    if (tasksRes.data) setTasks(tasksRes.data);
+    if (deliverablesRes.data) setDeliverables(deliverablesRes.data);
     setLoading(false);
   };
 
-  const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    return { daysInMonth: lastDay.getDate(), startingDay: firstDay.getDay() };
+  // Generate calendar events
+  const events = useMemo(() => {
+    const eventList: CalendarEvent[] = [];
+
+    if (viewFilter === 'all' || viewFilter === 'projects') {
+      projects.forEach(p => {
+        if (p.project_end_date) {
+          eventList.push({
+            id: p.id,
+            title: p.project_name,
+            date: p.project_end_date.split('T')[0],
+            type: 'project',
+            priority: p.project_priority,
+            status: p.project_status,
+            color: p.teams?.color || '#8B5CF6',
+          });
+        }
+      });
+    }
+
+    if (viewFilter === 'all' || viewFilter === 'tasks') {
+      tasks.forEach(t => {
+        if (t.due_date) {
+          eventList.push({
+            id: t.id,
+            title: t.title,
+            date: t.due_date.split('T')[0],
+            type: 'task',
+            priority: t.priority,
+            status: t.status,
+            color: '#3B82F6',
+          });
+        }
+      });
+    }
+
+    if (viewFilter === 'all' || viewFilter === 'deliverables') {
+      deliverables.forEach(d => {
+        if (d.due_date) {
+          eventList.push({
+            id: d.id,
+            title: d.deliverable_name,
+            date: d.due_date.split('T')[0],
+            type: 'deliverable',
+            status: d.status,
+            color: '#F59E0B',
+          });
+        }
+      });
+    }
+
+    return eventList;
+  }, [projects, tasks, deliverables, viewFilter]);
+
+  // Calendar helpers
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startingDay = firstDay.getDay();
+  const totalDays = lastDay.getDate();
+
+  const monthName = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const prevMonth = () => {
+    setCurrentDate(new Date(year, month - 1, 1));
+    setSelectedDate(null);
   };
 
-  const { daysInMonth, startingDay } = getDaysInMonth(currentDate);
-
-  const getItemsForDay = (day: number) => {
-    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return calendarItems.filter(item => {
-      const matchesDate = item.date === dateStr;
-      const matchesFilter = filterType === 'all' || item.type === filterType;
-      return matchesDate && matchesFilter;
-    });
+  const nextMonth = () => {
+    setCurrentDate(new Date(year, month + 1, 1));
+    setSelectedDate(null);
   };
 
-  const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  const today = new Date();
-  const isCurrentMonth = currentDate.getMonth() === today.getMonth() && currentDate.getFullYear() === today.getFullYear();
-  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-  const stats = {
-    totalProjects: calendarItems.filter(i => i.type === 'project').length,
-    totalBim: calendarItems.filter(i => i.type === 'bim').length,
-    totalTasks: calendarItems.filter(i => i.type === 'task').length,
-    overdue: calendarItems.filter(i => {
-      const itemDate = new Date(i.date);
-      return itemDate < today && i.status !== 'done' && i.status !== 'completed' && i.status !== 'submitted';
-    }).length,
+  const goToToday = () => {
+    setCurrentDate(new Date());
+    setSelectedDate(new Date().toISOString().split('T')[0]);
   };
 
-  const navigateMonth = (direction: number) => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + direction, 1));
+  const getEventsForDate = (date: string) => {
+    return events.filter(e => e.date === date);
   };
+
+  const selectedDateEvents = selectedDate ? getEventsForDate(selectedDate) : [];
+
+  const today = new Date().toISOString().split('T')[0];
+
+  // Generate calendar days
+  const calendarDays = [];
+  for (let i = 0; i < startingDay; i++) {
+    calendarDays.push(null);
+  }
+  for (let i = 1; i <= totalDays; i++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+    calendarDays.push({ day: i, date: dateStr });
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="spinner" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      <Link href="/dashboard" className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors group">
-        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-        Back to Dashboard
-      </Link>
-
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <Link href="/dashboard" className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+            <ChevronLeft className="w-5 h-5 text-gray-400" />
+          </Link>
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-lg shadow-pink-500/20">
             <CalendarIcon className="w-7 h-7 text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold"><span className="text-gradient">Calendar</span></h1>
-            <p className="text-gray-400 mt-1">Project submissions, BIM deliverables & task deadlines</p>
+            <h1 className="text-3xl font-bold">
+              <span className="text-gradient">Calendar</span>
+            </h1>
+            <p className="text-gray-400 mt-1">Deadlines & Submissions</p>
           </div>
         </div>
-        <button className="btn-primary">
-          <Plus className="w-5 h-5" />
-          Add Event
-        </button>
-      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="card-premium p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
-              <FolderKanban className="w-5 h-5 text-purple-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{stats.totalProjects}</p>
-              <p className="text-xs text-gray-400">Project Deadlines</p>
-            </div>
-          </div>
-        </div>
-        <div className="card-premium p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-              <FileBox className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{stats.totalBim}</p>
-              <p className="text-xs text-gray-400">BIM Submissions</p>
-            </div>
-          </div>
-        </div>
-        <div className="card-premium p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{stats.totalTasks}</p>
-              <p className="text-xs text-gray-400">Task Deadlines</p>
-            </div>
-          </div>
-        </div>
-        <div className="card-premium p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-red-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{stats.overdue}</p>
-              <p className="text-xs text-gray-400">Overdue</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Calendar Controls */}
-      <div className="card-premium p-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigateMonth(-1)} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <h2 className="text-xl font-semibold min-w-[200px] text-center">{monthYear}</h2>
-          <button onClick={() => navigateMonth(1)} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
-            <ChevronRight className="w-5 h-5" />
-          </button>
-        </div>
-        
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1 p-1 bg-white/5 rounded-xl">
             {[
               { key: 'all', label: 'All' },
-              { key: 'project', label: 'Projects', icon: FolderKanban },
-              { key: 'bim', label: 'BIM', icon: FileBox },
-              { key: 'task', label: 'Tasks', icon: Clock },
-            ].map((filter) => (
+              { key: 'projects', label: 'Projects' },
+              { key: 'tasks', label: 'Tasks' },
+              { key: 'deliverables', label: 'BIM' },
+            ].map(({ key, label }) => (
               <button
-                key={filter.key}
-                onClick={() => setFilterType(filter.key as any)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  filterType === filter.key ? 'bg-[#00AEEF] text-white' : 'text-gray-400 hover:text-white'
+                key={key}
+                onClick={() => setViewFilter(key as any)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  viewFilter === key
+                    ? 'bg-[#00AEEF] text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                {filter.icon && <filter.icon className="w-3.5 h-3.5" />}
-                {filter.label}
+                {label}
               </button>
             ))}
           </div>
-          
-          <button onClick={() => setCurrentDate(new Date())} className="btn-secondary">
-            Today
-          </button>
-        </div>
-      </div>
-
-      {/* Legend */}
-      <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-purple-500" />
-          <span className="text-xs text-gray-400">Project Submission</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-emerald-500" />
-          <span className="text-xs text-gray-400">BIM Deliverable</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-blue-500" />
-          <span className="text-xs text-gray-400">Task Deadline</span>
         </div>
       </div>
 
       {/* Calendar Grid */}
-      <div className="card-premium overflow-hidden">
-        <div className="grid grid-cols-7 border-b border-white/5">
-          {weekDays.map((day) => (
-            <div key={day} className="p-4 text-center text-sm font-medium text-gray-400">{day}</div>
-          ))}
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center h-96">
-            <div className="spinner" />
+      <div className="grid grid-cols-3 gap-6">
+        {/* Calendar */}
+        <div className="col-span-2 card-premium p-6">
+          {/* Month Navigation */}
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold">{monthName}</h2>
+            <div className="flex items-center gap-2">
+              <button onClick={goToToday} className="btn-secondary text-sm">
+                Today
+              </button>
+              <button onClick={prevMonth} className="p-2 hover:bg-white/5 rounded-lg">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button onClick={nextMonth} className="p-2 hover:bg-white/5 rounded-lg">
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-7">
-            {Array.from({ length: startingDay }).map((_, i) => (
-              <div key={`empty-${i}`} className="min-h-[140px] p-2 border-r border-b border-white/5 bg-black/20" />
+
+          {/* Day Headers */}
+          <div className="grid grid-cols-7 gap-1 mb-2">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+              <div key={day} className="text-center text-xs font-medium text-gray-500 py-2">
+                {day}
+              </div>
             ))}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const day = i + 1;
-              const dayItems = getItemsForDay(day);
-              const isToday = isCurrentMonth && day === today.getDate();
-              const isSelected = selectedDate?.getDate() === day && selectedDate?.getMonth() === currentDate.getMonth();
+          </div>
+
+          {/* Calendar Grid */}
+          <div className="grid grid-cols-7 gap-1">
+            {calendarDays.map((day, i) => {
+              if (!day) {
+                return <div key={`empty-${i}`} className="aspect-square" />;
+              }
+
+              const dateEvents = getEventsForDate(day.date);
+              const isToday = day.date === today;
+              const isSelected = day.date === selectedDate;
+              const hasOverdue = dateEvents.some(e => 
+                day.date < today && e.status !== 'completed' && e.status !== 'done' && e.status !== 'approved'
+              );
 
               return (
-                <div
-                  key={day}
-                  onClick={() => setSelectedDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), day))}
-                  className={`min-h-[140px] p-2 border-r border-b border-white/5 cursor-pointer transition-colors hover:bg-white/5 ${
-                    isSelected ? 'bg-[#00AEEF]/10' : ''
-                  }`}
+                <button
+                  key={day.date}
+                  onClick={() => setSelectedDate(day.date)}
+                  className={`aspect-square p-1 rounded-xl transition-all relative ${
+                    isSelected
+                      ? 'bg-[#00AEEF]/20 border border-[#00AEEF]'
+                      : isToday
+                        ? 'bg-white/10 border border-white/20'
+                        : 'hover:bg-white/5 border border-transparent'
+                  } ${hasOverdue ? 'ring-1 ring-red-500/50' : ''}`}
                 >
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm mb-2 ${
-                    isToday ? 'bg-[#00AEEF] text-white font-bold' : ''
+                  <div className={`text-sm font-medium mb-1 ${
+                    isToday ? 'text-[#00AEEF]' : ''
                   }`}>
-                    {day}
+                    {day.day}
                   </div>
-                  <div className="space-y-1">
-                    {dayItems.slice(0, 3).map((item) => {
-                      const TypeIcon = typeIcons[item.type];
-                      return (
-                        <div 
-                          key={item.id} 
-                          className={`flex items-center gap-1 px-2 py-1 bg-white/5 rounded text-xs truncate border-l-2 ${typeColors[item.type]}`}
-                        >
-                          <TypeIcon className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{item.title}</span>
-                        </div>
-                      );
-                    })}
-                    {dayItems.length > 3 && (
-                      <div className="text-[10px] text-gray-400 px-2">+{dayItems.length - 3} more</div>
+                  
+                  {/* Event dots */}
+                  <div className="flex flex-wrap gap-0.5 justify-center">
+                    {dateEvents.slice(0, 3).map((event, j) => (
+                      <div
+                        key={j}
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{ backgroundColor: event.color }}
+                      />
+                    ))}
+                    {dateEvents.length > 3 && (
+                      <span className="text-[8px] text-gray-500">+{dateEvents.length - 3}</span>
                     )}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
-        )}
-      </div>
 
-      {/* Selected Day Details */}
-      {selectedDate && (
+          {/* Legend */}
+          <div className="flex items-center gap-6 mt-6 pt-4 border-t border-white/5">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-purple-500" />
+              <span className="text-xs text-gray-400">Projects</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-blue-500" />
+              <span className="text-xs text-gray-400">Tasks</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-amber-500" />
+              <span className="text-xs text-gray-400">BIM Deliverables</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Selected Date Details */}
         <div className="card-premium p-6">
-          <h3 className="font-semibold mb-4 flex items-center gap-2 text-lg">
-            <CalendarIcon className="w-5 h-5 text-[#00AEEF]" />
-            {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+          <h3 className="text-lg font-semibold mb-4">
+            {selectedDate 
+              ? new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { 
+                  weekday: 'long',
+                  month: 'long', 
+                  day: 'numeric' 
+                })
+              : 'Select a date'}
           </h3>
-          
-          {getItemsForDay(selectedDate.getDate()).length === 0 ? (
-            <p className="text-gray-400 text-sm">No items scheduled for this day</p>
-          ) : (
-            <div className="space-y-3">
-              {getItemsForDay(selectedDate.getDate()).map((item) => {
-                const TypeIcon = typeIcons[item.type];
-                const isOverdue = new Date(item.date) < today && item.status !== 'done' && item.status !== 'completed' && item.status !== 'submitted';
-                
+
+          <div className="space-y-3 max-h-[500px] overflow-y-auto no-scrollbar">
+            {selectedDateEvents.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <CalendarIcon className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No events on this date</p>
+              </div>
+            ) : (
+              selectedDateEvents.map(event => {
+                const Icon = event.type === 'project' ? FolderKanban 
+                  : event.type === 'task' ? ListTodo 
+                  : Building2;
+                const isOverdue = event.date < today && 
+                  event.status !== 'completed' && 
+                  event.status !== 'done' && 
+                  event.status !== 'approved';
+
                 return (
-                  <div 
-                    key={item.id} 
-                    className={`flex items-center gap-4 p-4 bg-white/5 rounded-xl border-l-4 ${typeColors[item.type]} ${
-                      isOverdue ? 'border border-red-500/30' : ''
+                  <div
+                    key={`${event.type}-${event.id}`}
+                    className={`p-4 rounded-xl border transition-all hover:scale-[1.02] ${
+                      isOverdue 
+                        ? 'bg-red-500/10 border-red-500/30' 
+                        : 'bg-white/5 border-white/5'
                     }`}
                   >
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                      item.type === 'project' ? 'bg-purple-500/20' :
-                      item.type === 'bim' ? 'bg-emerald-500/20' : 'bg-blue-500/20'
-                    }`}>
-                      <TypeIcon className={`w-5 h-5 ${
-                        item.type === 'project' ? 'text-purple-400' :
-                        item.type === 'bim' ? 'text-emerald-400' : 'text-blue-400'
-                      }`} />
+                    <div className="flex items-start gap-3">
+                      <div 
+                        className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: `${event.color}20` }}
+                      >
+                        <Icon className="w-5 h-5" style={{ color: event.color }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm line-clamp-2">{event.title}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-gray-500 capitalize">{event.type}</span>
+                          {event.priority && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                              event.priority === 'critical' || event.priority === 'urgent'
+                                ? 'bg-red-500/20 text-red-400'
+                                : event.priority === 'high'
+                                  ? 'bg-amber-500/20 text-amber-400'
+                                  : 'bg-gray-500/20 text-gray-400'
+                            }`}>
+                              {event.priority}
+                            </span>
+                          )}
+                          {isOverdue && (
+                            <span className="text-xs text-red-400 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              Overdue
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-medium">{item.title}</h4>
-                        {isOverdue && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">OVERDUE</span>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${
-                          item.type === 'project' ? 'bg-purple-500/20 text-purple-400' :
-                          item.type === 'bim' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-400'
-                        }`}>
-                          {item.type === 'bim' ? 'BIM Deliverable' : item.type}
-                        </span>
-                        
-                        {item.discipline && (
-                          <span className="text-xs text-gray-500">{item.discipline}</span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {item.teamName && (
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5">
-                        <Users className="w-4 h-4 text-gray-400" />
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.teamColor || '#6b7280' }} />
-                        <span className="text-sm font-medium">{item.teamName}</span>
-                      </div>
-                    )}
                   </div>
                 );
-              })}
-            </div>
-          )}
+              })
+            )}
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* Upcoming Section */}
+      <div className="card-premium p-6">
+        <h3 className="text-lg font-semibold mb-4">Upcoming This Week</h3>
+        <div className="grid grid-cols-4 gap-4">
+          {Array.from({ length: 7 }).map((_, i) => {
+            const date = new Date();
+            date.setDate(date.getDate() + i);
+            const dateStr = date.toISOString().split('T')[0];
+            const dayEvents = getEventsForDate(dateStr);
+            const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+            const dayNum = date.getDate();
+
+            if (dayEvents.length === 0) return null;
+
+            return (
+              <div key={dateStr} className="bg-white/5 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm text-gray-500">{dayName}</p>
+                    <p className="text-xl font-bold">{dayNum}</p>
+                  </div>
+                  <span className="text-sm text-gray-500 bg-white/10 px-2 py-1 rounded-full">
+                    {dayEvents.length}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {dayEvents.slice(0, 3).map(event => (
+                    <div key={event.id} className="flex items-center gap-2">
+                      <div 
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: event.color }}
+                      />
+                      <span className="text-xs text-gray-400 truncate">{event.title}</span>
+                    </div>
+                  ))}
+                  {dayEvents.length > 3 && (
+                    <p className="text-xs text-gray-500">+{dayEvents.length - 3} more</p>
+                  )}
+                </div>
+              </div>
+            );
+          }).filter(Boolean).slice(0, 4)}
+        </div>
+      </div>
     </div>
   );
 }

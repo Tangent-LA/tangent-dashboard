@@ -1,63 +1,70 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import Link from 'next/link';
 import {
+  Users,
   Plus,
   Search,
-  Users,
-  UserPlus,
-  ChevronLeft,
-  Edit,
   MoreHorizontal,
-  CheckCircle,
-  X,
+  Edit,
   Trash2,
+  ChevronLeft,
+  UserPlus,
   UserMinus,
+  FolderKanban,
+  AlertTriangle,
+  CheckCircle2,
+  Flame,
+  Activity,
+  Target,
+  X,
   Mail,
+  Phone,
 } from 'lucide-react';
-
-type TeamMember = {
-  id: string;
-  full_name: string | null;
-  email: string;
-  avatar_url: string | null;
-  role: string;
-  job_title: string | null;
-  activity_status: string;
-};
 
 type Team = {
   id: string;
   team_name: string;
+  color: string;
   description: string | null;
-  color: string | null;
   is_active: boolean;
   created_at: string;
-  members?: TeamMember[];
 };
 
-type AvailableUser = {
+type Profile = {
   id: string;
-  full_name: string | null;
   email: string;
-  role: string;
+  full_name: string | null;
+  role: string | null;
   team_id: string | null;
+  is_active: boolean;
+  avatar_url: string | null;
 };
 
-const teamColors = ['#00AEEF', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899', '#06B6D4', '#84CC16'];
+type Project = {
+  id: string;
+  project_name: string;
+  project_status: string;
+  project_priority: string;
+  project_end_date: string | null;
+  team_id: string | null;
+  progress_percentage: number;
+};
 
 export default function TeamsPage() {
   const [teams, setTeams] = useState<Team[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showTeamModal, setShowTeamModal] = useState(false);
-  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [showModal, setShowModal] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
-  const [selectedTeamForMember, setSelectedTeamForMember] = useState<Team | null>(null);
-  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -65,113 +72,95 @@ export default function TeamsPage() {
   );
 
   useEffect(() => {
-    fetchTeams();
+    fetchData();
   }, []);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setActiveDropdown(null);
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setActiveMenu(null);
       }
     };
-    
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const fetchTeams = async () => {
+  const fetchData = async () => {
     setLoading(true);
-    
-    // Fetch teams
-    const { data: teamsData, error: teamsError } = await supabase
-      .from('teams')
-      .select('*')
-      .order('team_name');
+    const [teamsRes, profilesRes, projectsRes] = await Promise.all([
+      supabase.from('teams').select('*').order('team_name'),
+      supabase.from('profiles').select('*'),
+      supabase.from('projects').select('id, project_name, project_status, project_priority, project_end_date, team_id, progress_percentage'),
+    ]);
 
-    if (teamsError) {
-      console.error('Error fetching teams:', teamsError);
-      setLoading(false);
-      return;
-    }
-
-    // Fetch members for each team
-    const teamsWithMembers = await Promise.all(
-      (teamsData || []).map(async (team) => {
-        const { data: members } = await supabase
-          .from('profiles')
-          .select('id, full_name, email, avatar_url, role, job_title, activity_status')
-          .eq('team_id', team.id)
-          .eq('is_active', true);
-        return { ...team, members: members || [] };
-      })
-    );
-
-    setTeams(teamsWithMembers);
+    if (teamsRes.data) setTeams(teamsRes.data);
+    if (profilesRes.data) setProfiles(profilesRes.data);
+    if (projectsRes.data) setProjects(projectsRes.data);
     setLoading(false);
   };
 
+  // Calculate team analytics
+  const teamAnalytics = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    
+    return teams.map(team => {
+      const teamProjects = projects.filter(p => p.team_id === team.id);
+      const teamMembers = profiles.filter(p => p.team_id === team.id && p.is_active);
+      const activeProjects = teamProjects.filter(p => p.project_status === 'active' || p.project_status === 'in_progress');
+      const overdueProjects = teamProjects.filter(p => {
+        if (!p.project_end_date || p.project_status === 'completed') return false;
+        return p.project_end_date < today;
+      });
+      const criticalProjects = teamProjects.filter(p => p.project_priority === 'critical' || p.project_priority === 'high');
+      const completedProjects = teamProjects.filter(p => p.project_status === 'completed');
+      
+      const capacity = teamMembers.length > 0 
+        ? Math.round((activeProjects.length / teamMembers.length) * 100) 
+        : 0;
+
+      return {
+        ...team,
+        members: teamMembers,
+        memberCount: teamMembers.length,
+        totalProjects: teamProjects.length,
+        activeProjects: activeProjects.length,
+        overdueProjects: overdueProjects.length,
+        criticalProjects: criticalProjects.length,
+        completedProjects: completedProjects.length,
+        capacity,
+        isOverloaded: capacity > 150 || overdueProjects.length > 0,
+        isLight: capacity < 50 && activeProjects.length < 2,
+        avgProgress: teamProjects.length > 0
+          ? Math.round(teamProjects.reduce((sum, p) => sum + (p.progress_percentage || 0), 0) / teamProjects.length)
+          : 0,
+      };
+    });
+  }, [teams, profiles, projects]);
+
+  const filteredTeams = teamAnalytics.filter(team =>
+    team.team_name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   const deleteTeam = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this team? Members will be unassigned.')) return;
-    
-    // First unassign all members
-    await supabase.from('profiles').update({ team_id: null }).eq('team_id', id);
-    
-    // Then delete the team
+    if (!confirm('Are you sure you want to delete this team?')) return;
     const { error } = await supabase.from('teams').delete().eq('id', id);
     if (!error) {
       setTeams(teams.filter(t => t.id !== id));
-      setActiveDropdown(null);
+      setActiveMenu(null);
     }
-  };
-
-  const removeMemberFromTeam = async (memberId: string, teamId: string) => {
-    if (!confirm('Remove this member from the team?')) return;
-    
-    const { error } = await supabase
-      .from('profiles')
-      .update({ team_id: null })
-      .eq('id', memberId);
-    
-    if (!error) {
-      setTeams(teams.map(team => {
-        if (team.id === teamId) {
-          return { ...team, members: team.members?.filter(m => m.id !== memberId) || [] };
-        }
-        return team;
-      }));
-    }
-  };
-
-  const toggleDropdown = (id: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setActiveDropdown(activeDropdown === id ? null : id);
   };
 
   const openEditModal = (team: Team) => {
     setEditingTeam(team);
-    setShowTeamModal(true);
-    setActiveDropdown(null);
+    setShowModal(true);
+    setActiveMenu(null);
   };
 
-  const openNewTeamModal = () => {
-    setEditingTeam(null);
-    setShowTeamModal(true);
-  };
-
-  const openAddMemberModal = (team: Team) => {
-    setSelectedTeamForMember(team);
+  const openMemberModal = (team: Team) => {
+    setSelectedTeam(team);
     setShowMemberModal(true);
-    setActiveDropdown(null);
+    setActiveMenu(null);
   };
-
-  const filteredTeams = teams.filter(team =>
-    team.team_name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const totalMembers = teams.reduce((acc, team) => acc + (team.members?.length || 0), 0);
-  const activeTeams = teams.filter(t => t.is_active).length;
 
   if (loading) {
     return (
@@ -183,272 +172,278 @@ export default function TeamsPage() {
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      {/* Back Navigation */}
-      <Link href="/dashboard" className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors group">
-        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-        Back to Dashboard
-      </Link>
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center shadow-lg shadow-violet-500/20">
+          <Link href="/dashboard" className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+            <ChevronLeft className="w-5 h-5 text-gray-400" />
+          </Link>
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-green-500/20">
             <Users className="w-7 h-7 text-white" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">
               <span className="text-gradient">Teams</span>
             </h1>
-            <p className="text-gray-400 mt-1">Manage your organization's teams</p>
+            <p className="text-gray-400 mt-1">{teams.length} teams • {profiles.filter(p => p.is_active).length} members</p>
           </div>
         </div>
-        <button onClick={openNewTeamModal} className="btn-primary">
+
+        <button onClick={() => { setEditingTeam(null); setShowModal(true); }} className="btn-primary">
           <Plus className="w-5 h-5" />
           New Team
         </button>
       </div>
 
-      {/* Stats */}
+      {/* Overview Stats */}
       <div className="grid grid-cols-4 gap-4">
-        <div className="card-premium p-5">
+        <div className="kpi-card">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center">
-              <Users className="w-5 h-5 text-violet-400" />
+            <div className="kpi-icon bg-green-500/20">
+              <CheckCircle2 className="w-5 h-5 text-green-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{teams.length}</p>
-              <p className="text-xs text-gray-400">Total Teams</p>
+              <p className="text-2xl font-bold">{teamAnalytics.filter(t => t.isLight).length}</p>
+              <p className="text-sm text-gray-400">Available</p>
             </div>
           </div>
         </div>
-        <div className="card-premium p-5">
+        <div className="kpi-card">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center">
-              <CheckCircle className="w-5 h-5 text-green-400" />
+            <div className="kpi-icon bg-blue-500/20">
+              <Activity className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{activeTeams}</p>
-              <p className="text-xs text-gray-400">Active Teams</p>
+              <p className="text-2xl font-bold">{teamAnalytics.filter(t => !t.isLight && !t.isOverloaded).length}</p>
+              <p className="text-sm text-gray-400">Balanced</p>
             </div>
           </div>
         </div>
-        <div className="card-premium p-5">
+        <div className="kpi-card">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
-              <UserPlus className="w-5 h-5 text-blue-400" />
+            <div className="kpi-icon bg-red-500/20">
+              <Flame className="w-5 h-5 text-red-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{totalMembers}</p>
-              <p className="text-xs text-gray-400">Total Members</p>
+              <p className="text-2xl font-bold">{teamAnalytics.filter(t => t.isOverloaded).length}</p>
+              <p className="text-sm text-gray-400">Overloaded</p>
             </div>
           </div>
         </div>
-        <div className="card-premium p-5">
+        <div className="kpi-card">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center">
-              <Users className="w-5 h-5 text-orange-400" />
+            <div className="kpi-icon bg-purple-500/20">
+              <Target className="w-5 h-5 text-purple-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{Math.round(totalMembers / Math.max(teams.length, 1))}</p>
-              <p className="text-xs text-gray-400">Avg per Team</p>
+              <p className="text-2xl font-bold">
+                {teamAnalytics.length > 0 
+                  ? Math.round(teamAnalytics.reduce((sum, t) => sum + t.capacity, 0) / teamAnalytics.length)
+                  : 0}%
+              </p>
+              <p className="text-sm text-gray-400">Avg Capacity</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-        <input
-          type="text"
-          placeholder="Search teams..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="input-premium pl-12 w-full"
-        />
+      <div className="flex items-center gap-4">
+        <div className="flex-1 max-w-md relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+          <input
+            type="text"
+            placeholder="Search teams..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="input-premium pl-12 w-full"
+          />
+        </div>
       </div>
 
       {/* Teams Grid */}
-      {filteredTeams.length === 0 ? (
-        <div className="card-premium text-center py-16">
-          <Users className="w-20 h-20 mx-auto mb-4 text-gray-700" />
-          <h3 className="text-xl font-semibold mb-2">No Teams Found</h3>
-          <p className="text-gray-400 text-sm mb-6">Create your first team to get started</p>
-          <button onClick={openNewTeamModal} className="btn-primary">
-            <Plus className="w-4 h-4" />
-            Create Team
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-6">
-          {filteredTeams.map((team) => (
-            <div
-              key={team.id}
-              className="card-premium overflow-hidden"
-              style={{ borderTopColor: team.color || '#00AEEF', borderTopWidth: '3px' }}
-            >
-              {/* Team Header */}
-              <div className="p-5 border-b border-white/5">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg"
-                      style={{ backgroundColor: team.color || '#00AEEF' }}
-                    >
-                      {team.team_name.charAt(0)}
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-lg">{team.team_name}</h3>
-                      <p className="text-sm text-gray-400">{team.members?.length || 0} members</p>
-                    </div>
-                  </div>
-                  
-                  {/* Dropdown Menu */}
-                  <div className="relative" ref={activeDropdown === team.id ? dropdownRef : null}>
-                    <button
-                      onClick={(e) => toggleDropdown(team.id, e)}
-                      className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-                    >
-                      <MoreHorizontal className="w-4 h-4 text-gray-400" />
-                    </button>
-                    
-                    {activeDropdown === team.id && (
-                      <div className="absolute right-0 top-full mt-1 w-44 py-1 bg-[#1e1e28] rounded-xl border border-white/10 shadow-xl z-50">
-                        <button
-                          onClick={() => openEditModal(team)}
-                          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-300 hover:bg-white/5 hover:text-white transition-colors"
-                        >
-                          <Edit className="w-4 h-4" />
-                          Edit Team
-                        </button>
-                        <button
-                          onClick={() => openAddMemberModal(team)}
-                          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-300 hover:bg-white/5 hover:text-white transition-colors"
-                        >
-                          <UserPlus className="w-4 h-4" />
-                          Add Member
-                        </button>
-                        <button
-                          onClick={() => deleteTeam(team.id)}
-                          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete Team
-                        </button>
-                      </div>
-                    )}
-                  </div>
+      <div className="grid grid-cols-2 gap-6">
+        {filteredTeams.map((team) => (
+          <div
+            key={team.id}
+            className={`card-premium p-6 ${
+              team.isOverloaded ? 'border-red-500/30' : team.isLight ? 'border-green-500/30' : ''
+            }`}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div 
+                  className="w-12 h-12 rounded-xl flex items-center justify-center"
+                  style={{ backgroundColor: `${team.color}20` }}
+                >
+                  <Users className="w-6 h-6" style={{ color: team.color }} />
                 </div>
-                {team.description && (
-                  <p className="text-sm text-gray-400 mt-3">{team.description}</p>
-                )}
+                <div>
+                  <h3 className="font-semibold text-lg">{team.team_name}</h3>
+                  <p className="text-sm text-gray-500">{team.memberCount} members</p>
+                </div>
               </div>
 
-              {/* Team Members */}
-              <div className="p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-gray-300">Team Members</span>
+              <div className="flex items-center gap-2">
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                  team.isOverloaded ? 'bg-red-500/20 text-red-400' :
+                  team.isLight ? 'bg-green-500/20 text-green-400' :
+                  'bg-yellow-500/20 text-yellow-400'
+                }`}>
+                  {team.isOverloaded ? 'Overloaded' : team.isLight ? 'Available' : 'Balanced'}
+                </span>
+
+                <div className="relative" ref={activeMenu === team.id ? menuRef : null}>
                   <button
-                    onClick={() => openAddMemberModal(team)}
-                    className="text-xs text-[#00AEEF] hover:underline flex items-center gap-1"
+                    onClick={() => setActiveMenu(activeMenu === team.id ? null : team.id)}
+                    className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
                   >
-                    <UserPlus className="w-3 h-3" />
-                    Add
+                    <MoreHorizontal className="w-4 h-4 text-gray-400" />
                   </button>
-                </div>
-
-                {team.members && team.members.length > 0 ? (
-                  <div className="space-y-3">
-                    {team.members.slice(0, 5).map((member) => (
-                      <div key={member.id} className="flex items-center gap-3 group">
-                        <div className="relative">
-                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#00AEEF] to-[#0077a3] flex items-center justify-center text-white text-sm font-medium">
-                            {member.avatar_url ? (
-                              <img src={member.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
-                            ) : (
-                              member.full_name?.charAt(0).toUpperCase() || member.email.charAt(0).toUpperCase()
-                            )}
-                          </div>
-                          <span
-                            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#16161f] ${
-                              member.activity_status === 'online' || member.activity_status === 'active'
-                                ? 'bg-green-500'
-                                : member.activity_status === 'idle'
-                                ? 'bg-yellow-500'
-                                : 'bg-gray-500'
-                            }`}
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{member.full_name || member.email}</p>
-                          <p className="text-xs text-gray-500 truncate">{member.job_title || member.role}</p>
-                        </div>
-                        <button
-                          onClick={() => removeMemberFromTeam(member.id, team.id)}
-                          className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-all"
-                          title="Remove from team"
-                        >
-                          <UserMinus className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-
-                    {team.members.length > 5 && (
-                      <button 
-                        onClick={() => openEditModal(team)}
-                        className="text-xs text-gray-400 hover:text-white transition-colors"
+                  {activeMenu === team.id && (
+                    <div className="absolute right-0 top-8 w-40 bg-[#1e1e28] border border-white/10 rounded-xl shadow-xl z-50 animate-fadeIn">
+                      <button
+                        onClick={() => openMemberModal(team)}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-300 hover:bg-white/5 rounded-t-xl"
                       >
-                        +{team.members.length - 5} more members
+                        <UserPlus className="w-4 h-4" />
+                        Manage Members
                       </button>
-                    )}
+                      <button
+                        onClick={() => openEditModal(team)}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-300 hover:bg-white/5"
+                      >
+                        <Edit className="w-4 h-4" />
+                        Edit Team
+                      </button>
+                      <button
+                        onClick={() => deleteTeam(team.id)}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 rounded-b-xl"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Capacity Bar */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between text-sm mb-2">
+                <span className="text-gray-400">Capacity Utilization</span>
+                <span className={`font-bold ${
+                  team.capacity > 150 ? 'text-red-400' : team.capacity > 100 ? 'text-yellow-400' : 'text-green-400'
+                }`}>
+                  {team.capacity}%
+                </span>
+              </div>
+              <div className="h-2.5 bg-white/10 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    team.capacity > 150 ? 'bg-gradient-to-r from-red-500 to-red-400' :
+                    team.capacity > 100 ? 'bg-gradient-to-r from-yellow-500 to-yellow-400' :
+                    'bg-gradient-to-r from-green-500 to-green-400'
+                  }`}
+                  style={{ width: `${Math.min(team.capacity, 200) / 2}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-4 gap-3 mb-4">
+              <div className="text-center p-3 bg-white/5 rounded-xl">
+                <p className="text-lg font-bold">{team.totalProjects}</p>
+                <p className="text-xs text-gray-500">Total</p>
+              </div>
+              <div className="text-center p-3 bg-white/5 rounded-xl">
+                <p className="text-lg font-bold text-blue-400">{team.activeProjects}</p>
+                <p className="text-xs text-gray-500">Active</p>
+              </div>
+              <div className="text-center p-3 bg-white/5 rounded-xl">
+                <p className="text-lg font-bold text-red-400">{team.overdueProjects}</p>
+                <p className="text-xs text-gray-500">Overdue</p>
+              </div>
+              <div className="text-center p-3 bg-white/5 rounded-xl">
+                <p className="text-lg font-bold text-green-400">{team.completedProjects}</p>
+                <p className="text-xs text-gray-500">Done</p>
+              </div>
+            </div>
+
+            {/* Team Members */}
+            <div className="pt-4 border-t border-white/5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm text-gray-400">Team Members</span>
+                <button
+                  onClick={() => openMemberModal(team)}
+                  className="text-xs text-[#00AEEF] hover:underline"
+                >
+                  Manage
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                {team.members.slice(0, 5).map((member, i) => (
+                  <div
+                    key={member.id}
+                    className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-600 to-gray-700 flex items-center justify-center text-xs font-semibold border-2 border-[#12121a] -ml-2 first:ml-0"
+                    title={member.full_name || member.email}
+                  >
+                    {member.full_name?.[0] || member.email[0].toUpperCase()}
                   </div>
-                ) : (
-                  <div className="text-center py-4">
-                    <Users className="w-8 h-8 mx-auto mb-2 text-gray-600" />
-                    <p className="text-sm text-gray-500">No members yet</p>
-                    <button
-                      onClick={() => openAddMemberModal(team)}
-                      className="text-xs text-[#00AEEF] hover:underline mt-2"
-                    >
-                      Add first member
-                    </button>
-                  </div>
+                ))}
+                {team.members.length > 5 && (
+                  <span className="text-xs text-gray-500 ml-1">+{team.members.length - 5} more</span>
+                )}
+                {team.members.length === 0 && (
+                  <span className="text-xs text-gray-500">No members assigned</span>
                 )}
               </div>
             </div>
-          ))}
+
+            {/* Alerts */}
+            {(team.overdueProjects > 0 || team.criticalProjects > 0) && (
+              <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
+                <div className="flex items-center gap-2 text-sm text-red-400">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>
+                    {team.overdueProjects > 0 && `${team.overdueProjects} overdue`}
+                    {team.overdueProjects > 0 && team.criticalProjects > 0 && ' • '}
+                    {team.criticalProjects > 0 && `${team.criticalProjects} critical`}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {filteredTeams.length === 0 && (
+        <div className="card-premium text-center py-16">
+          <Users className="w-16 h-16 mx-auto mb-4 text-gray-700" />
+          <h3 className="text-xl font-semibold mb-2">No Teams Found</h3>
+          <p className="text-gray-400 text-sm">Create your first team to get started</p>
         </div>
       )}
 
-      {/* Team Modal (Create/Edit) */}
-      {showTeamModal && (
+      {/* Team Modal */}
+      {showModal && (
         <TeamModal
           team={editingTeam}
-          onClose={() => {
-            setShowTeamModal(false);
-            setEditingTeam(null);
-          }}
-          onSaved={() => {
-            setShowTeamModal(false);
-            setEditingTeam(null);
-            fetchTeams();
-          }}
+          onClose={() => { setShowModal(false); setEditingTeam(null); }}
+          onSaved={() => { setShowModal(false); setEditingTeam(null); fetchData(); }}
         />
       )}
 
-      {/* Add Member Modal */}
-      {showMemberModal && selectedTeamForMember && (
-        <AddMemberModal
-          team={selectedTeamForMember}
-          onClose={() => {
-            setShowMemberModal(false);
-            setSelectedTeamForMember(null);
-          }}
-          onSaved={() => {
-            setShowMemberModal(false);
-            setSelectedTeamForMember(null);
-            fetchTeams();
-          }}
+      {/* Member Management Modal */}
+      {showMemberModal && selectedTeam && (
+        <MemberModal
+          team={selectedTeam}
+          members={profiles.filter(p => p.team_id === selectedTeam.id)}
+          allProfiles={profiles}
+          onClose={() => { setShowMemberModal(false); setSelectedTeam(null); }}
+          onSaved={() => { fetchData(); }}
         />
       )}
     </div>
@@ -468,8 +463,8 @@ function TeamModal({
   const isEditing = !!team;
   const [formData, setFormData] = useState({
     team_name: team?.team_name || '',
-    description: team?.description || '',
     color: team?.color || '#00AEEF',
+    description: team?.description || '',
     is_active: team?.is_active ?? true,
   });
   const [saving, setSaving] = useState(false);
@@ -479,6 +474,8 @@ function TeamModal({
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
+
+  const colors = ['#00AEEF', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#06B6D4', '#6366F1'];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -490,26 +487,14 @@ function TeamModal({
     setSaving(true);
     setError('');
 
-    const teamData = {
-      team_name: formData.team_name.trim(),
-      description: formData.description.trim() || null,
-      color: formData.color,
-      is_active: formData.is_active,
-      updated_at: new Date().toISOString(),
-    };
-
     try {
-      let result;
       if (isEditing) {
-        result = await supabase.from('teams').update(teamData).eq('id', team.id);
+        const { error } = await supabase.from('teams').update(formData).eq('id', team.id);
+        if (error) throw error;
       } else {
-        result = await supabase.from('teams').insert(teamData);
+        const { error } = await supabase.from('teams').insert(formData);
+        if (error) throw error;
       }
-
-      if (result.error) {
-        throw result.error;
-      }
-
       onSaved();
     } catch (err: any) {
       setError(err.message || 'Failed to save team');
@@ -522,87 +507,60 @@ function TeamModal({
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: formData.color }}
-            >
-              <Users className="w-5 h-5 text-white" />
-            </div>
-            <h2 className="text-xl font-bold">{isEditing ? 'Edit Team' : 'Create New Team'}</h2>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+          <h2 className="text-xl font-bold">{isEditing ? 'Edit Team' : 'New Team'}</h2>
+          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-            {error}
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-5">
+          {error && (
+            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+
           <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Team Name *</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Team Name *</label>
             <input
               type="text"
               value={formData.team_name}
               onChange={(e) => setFormData({ ...formData, team_name: e.target.value })}
               className="input-premium"
-              placeholder="e.g., Design Team"
+              placeholder="Enter team name"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Description</label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="input-premium h-20 resize-none"
-              placeholder="What does this team do?"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Team Color</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Team Color</label>
             <div className="flex items-center gap-2">
-              {teamColors.map((c) => (
+              {colors.map(color => (
                 <button
-                  key={c}
+                  key={color}
                   type="button"
-                  onClick={() => setFormData({ ...formData, color: c })}
-                  className={`w-8 h-8 rounded-lg transition-all ${
-                    formData.color === c ? 'ring-2 ring-white ring-offset-2 ring-offset-[#16161f]' : ''
+                  onClick={() => setFormData({ ...formData, color })}
+                  className={`w-8 h-8 rounded-lg transition-transform ${
+                    formData.color === color ? 'scale-125 ring-2 ring-white ring-offset-2 ring-offset-[#12121a]' : ''
                   }`}
-                  style={{ backgroundColor: c }}
+                  style={{ backgroundColor: color }}
                 />
               ))}
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-gray-300">Active Team</label>
-            <button
-              type="button"
-              onClick={() => setFormData({ ...formData, is_active: !formData.is_active })}
-              className={`w-12 h-6 rounded-full transition-colors relative ${
-                formData.is_active ? 'bg-[#00AEEF]' : 'bg-gray-600'
-              }`}
-            >
-              <span
-                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${
-                  formData.is_active ? 'right-1' : 'left-1'
-                }`}
-              />
-            </button>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              className="input-premium h-24 resize-none"
+              placeholder="Team description..."
+            />
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Cancel
-            </button>
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={saving} className="btn-primary">
               {saving ? 'Saving...' : isEditing ? 'Update Team' : 'Create Team'}
             </button>
@@ -613,148 +571,133 @@ function TeamModal({
   );
 }
 
-// Add Member Modal Component
-function AddMemberModal({
+// Member Modal Component
+function MemberModal({
   team,
+  members,
+  allProfiles,
   onClose,
   onSaved,
 }: {
   team: Team;
+  members: Profile[];
+  allProfiles: Profile[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [availableUsers, setAvailableUsers] = useState<AvailableUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const availableProfiles = allProfiles.filter(p => 
+    p.is_active && 
+    p.team_id !== team.id &&
+    (p.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+     p.email.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  useEffect(() => {
-    fetchAvailableUsers();
-  }, []);
-
-  const fetchAvailableUsers = async () => {
-    setLoading(true);
-    
-    // Get users who are not in any team OR in a different team
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, full_name, email, role, team_id')
-      .eq('is_active', true)
-      .order('full_name');
-
-    // Filter out users already in this team
-    const currentMemberIds = team.members?.map(m => m.id) || [];
-    const filtered = (data || []).filter(u => !currentMemberIds.includes(u.id));
-    
-    setAvailableUsers(filtered);
-    setLoading(false);
+  const addMember = async (profileId: string) => {
+    const { error } = await supabase.from('profiles').update({ team_id: team.id }).eq('id', profileId);
+    if (!error) onSaved();
   };
 
-  const addMemberToTeam = async (userId: string) => {
-    setSaving(userId);
-    
-    const { error } = await supabase
-      .from('profiles')
-      .update({ team_id: team.id })
-      .eq('id', userId);
-
-    if (!error) {
-      // Remove from available list
-      setAvailableUsers(availableUsers.filter(u => u.id !== userId));
-    }
-    setSaving(null);
+  const removeMember = async (profileId: string) => {
+    const { error } = await supabase.from('profiles').update({ team_id: null }).eq('id', profileId);
+    if (!error) onSaved();
   };
-
-  const filteredUsers = availableUsers.filter(user =>
-    (user.full_name?.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content p-6 max-w-lg" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: team.color || '#00AEEF' }}
-            >
-              <UserPlus className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${team.color}20` }}>
+              <Users className="w-5 h-5" style={{ color: team.color }} />
             </div>
             <div>
-              <h2 className="text-xl font-bold">Add Member</h2>
-              <p className="text-sm text-gray-400">to {team.team_name}</p>
+              <h2 className="text-xl font-bold">{team.team_name}</h2>
+              <p className="text-sm text-gray-500">{members.length} members</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="relative mb-4">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-          <input
-            type="text"
-            placeholder="Search users..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="input-premium pl-12"
-          />
+        {/* Current Members */}
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-gray-300 mb-3">Current Members</h3>
+          <div className="space-y-2 max-h-40 overflow-y-auto">
+            {members.length === 0 ? (
+              <p className="text-sm text-gray-500 py-4 text-center">No members in this team</p>
+            ) : (
+              members.map(member => (
+                <div key={member.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl group">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-sm font-semibold">
+                      {member.full_name?.[0] || member.email[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{member.full_name || 'Unnamed'}</p>
+                      <p className="text-xs text-gray-500">{member.role || 'Team Member'}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => removeMember(member.id)}
+                    className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                  >
+                    <UserMinus className="w-4 h-4" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="spinner" />
+        {/* Add Members */}
+        <div>
+          <h3 className="text-sm font-medium text-gray-300 mb-3">Add Members</h3>
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <input
+              type="text"
+              placeholder="Search users..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input-premium pl-10 text-sm"
+            />
           </div>
-        ) : filteredUsers.length === 0 ? (
-          <div className="text-center py-8">
-            <Users className="w-12 h-12 mx-auto mb-3 text-gray-600" />
-            <p className="text-gray-400">No available users to add</p>
-            <p className="text-xs text-gray-500 mt-1">All users are already in a team</p>
-          </div>
-        ) : (
-          <div className="space-y-2 max-h-80 overflow-y-auto no-scrollbar">
-            {filteredUsers.map((user) => (
-              <div
-                key={user.id}
-                className="flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
-              >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#00AEEF] to-[#0077a3] flex items-center justify-center text-white font-semibold">
-                  {user.full_name?.charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase()}
+          <div className="space-y-2 max-h-40 overflow-y-auto">
+            {availableProfiles.length === 0 ? (
+              <p className="text-sm text-gray-500 py-4 text-center">No available users</p>
+            ) : (
+              availableProfiles.slice(0, 10).map(profile => (
+                <div key={profile.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl group hover:bg-white/10 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-600 to-gray-700 flex items-center justify-center text-sm font-semibold">
+                      {profile.full_name?.[0] || profile.email[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{profile.full_name || 'Unnamed'}</p>
+                      <p className="text-xs text-gray-500">{profile.email}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => addMember(profile.id)}
+                    className="p-1.5 text-gray-500 hover:text-green-400 hover:bg-green-500/10 rounded-lg transition-all"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                  </button>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{user.full_name || 'No Name'}</p>
-                  <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                </div>
-                <span className="text-xs text-gray-400 capitalize px-2 py-1 bg-white/5 rounded-full">{user.role}</span>
-                <button
-                  onClick={() => addMemberToTeam(user.id)}
-                  disabled={saving === user.id}
-                  className="btn-primary text-sm py-1.5 px-3"
-                >
-                  {saving === user.id ? (
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <>
-                      <UserPlus className="w-4 h-4" />
-                      Add
-                    </>
-                  )}
-                </button>
-              </div>
-            ))}
+              ))
+            )}
           </div>
-        )}
+        </div>
 
-        <div className="flex justify-end gap-3 pt-4 mt-4 border-t border-white/5">
-          <button onClick={onSaved} className="btn-primary">
-            Done
-          </button>
+        <div className="flex justify-end pt-4 mt-4 border-t border-white/5">
+          <button onClick={onClose} className="btn-secondary">Done</button>
         </div>
       </div>
     </div>

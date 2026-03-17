@@ -9,36 +9,25 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@dnd-kit/core": "^6.1.0",
-    "@dnd-kit/sortable": "^8.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
     "@supabase/ssr": "^0.1.0",
     "@supabase/supabase-js": "^2.39.0",
-    "@tanstack/react-query": "^5.17.0",
-    "chart.js": "^4.4.1",
-    "clsx": "^2.1.1",
-    "date-fns": "^2.30.0",
-    "date-fns-tz": "^2.0.0",
-    "framer-motion": "^10.18.0",
-    "lucide-react": "^0.303.0",
-    "next": "14.2.3",
+    "clsx": "^2.1.0",
+    "lucide-react": "^0.312.0",
+    "next": "14.1.0",
     "react": "^18.2.0",
-    "react-chartjs-2": "^5.2.0",
     "react-dom": "^18.2.0",
-    "react-hot-toast": "^2.4.1",
-    "tailwind-merge": "^3.5.0",
-    "xlsx": "^0.18.5",
-    "zustand": "^4.4.7"
+    "tailwind-merge": "^2.2.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@types/node": "^20.10.0",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
-    "autoprefixer": "^10.4.16",
-    "eslint": "^8.56.0",
-    "eslint-config-next": "14.2.3",
-    "postcss": "^8.4.32",
-    "tailwindcss": "^3.4.0",
-    "typescript": "^5.3.0"
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.0.1",
+    "eslint": "^8",
+    "eslint-config-next": "14.1.0",
+    "postcss": "^8",
+    "tailwindcss": "^3.3.0",
+    "typescript": "^5"
   }
 }

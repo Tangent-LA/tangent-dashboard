@@ -1,155 +1,161 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
+import { useState } from 'react';
 import Link from 'next/link';
 import {
-  Plus,
   Zap,
   ChevronLeft,
-  X,
-  Edit,
-  Trash2,
+  Plus,
   Play,
   Pause,
-  ArrowRight,
+  Edit,
+  Trash2,
   Bell,
-  CheckCircle,
-  AlertTriangle,
+  Mail,
   Clock,
+  Calendar,
+  AlertTriangle,
+  CheckCircle2,
+  Settings,
+  ArrowRight,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 
 type AutomationRule = {
   id: string;
-  rule_name: string;
-  description: string | null;
-  trigger_type: string;
-  trigger_config: any;
-  action_type: string;
-  action_config: any;
-  is_active: boolean;
-  run_count: number;
-  last_run_at: string | null;
-  created_at: string;
+  name: string;
+  description: string;
+  trigger: string;
+  action: string;
+  isActive: boolean;
+  lastRun: string | null;
+  runCount: number;
 };
 
+const mockRules: AutomationRule[] = [
+  {
+    id: '1',
+    name: 'Deadline Reminder',
+    description: 'Send email notification 3 days before project deadline',
+    trigger: 'Project deadline approaching (3 days)',
+    action: 'Send email to project team',
+    isActive: true,
+    lastRun: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+    runCount: 47,
+  },
+  {
+    id: '2',
+    name: 'Overdue Alert',
+    description: 'Notify managers when project becomes overdue',
+    trigger: 'Project status = Overdue',
+    action: 'Send alert to managers',
+    isActive: true,
+    lastRun: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+    runCount: 12,
+  },
+  {
+    id: '3',
+    name: 'BIM Submission Reminder',
+    description: 'Remind team about upcoming BIM submissions',
+    trigger: 'BIM deliverable due in 7 days',
+    action: 'Send reminder to BIM coordinator',
+    isActive: false,
+    lastRun: null,
+    runCount: 0,
+  },
+  {
+    id: '4',
+    name: 'Weekly Progress Report',
+    description: 'Generate and send weekly project progress report',
+    trigger: 'Every Monday at 9:00 AM',
+    action: 'Generate report and email to stakeholders',
+    isActive: true,
+    lastRun: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
+    runCount: 23,
+  },
+  {
+    id: '5',
+    name: 'Task Assignment Notification',
+    description: 'Notify team member when task is assigned',
+    trigger: 'Task assigned to user',
+    action: 'Send notification to assignee',
+    isActive: true,
+    lastRun: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+    runCount: 156,
+  },
+];
+
 const triggerTypes = [
-  { value: 'status_change', label: 'Status Change', icon: CheckCircle },
-  { value: 'deadline_approaching', label: 'Deadline Approaching', icon: Clock },
-  { value: 'task_created', label: 'Task Created', icon: Plus },
-  { value: 'subtasks_complete', label: 'Subtasks Complete', icon: CheckCircle },
-  { value: 'task_overdue', label: 'Task Overdue', icon: AlertTriangle },
+  { value: 'deadline_approaching', label: 'Deadline Approaching', icon: Calendar },
+  { value: 'status_change', label: 'Status Changed', icon: AlertTriangle },
+  { value: 'task_assigned', label: 'Task Assigned', icon: CheckCircle2 },
+  { value: 'schedule', label: 'Scheduled Time', icon: Clock },
+  { value: 'deliverable_due', label: 'Deliverable Due', icon: Bell },
 ];
 
 const actionTypes = [
-  { value: 'assign_task', label: 'Assign Task' },
-  { value: 'send_notification', label: 'Send Notification' },
-  { value: 'update_status', label: 'Update Status' },
-  { value: 'escalate', label: 'Escalate to Manager' },
-  { value: 'create_task', label: 'Create Follow-up Task' },
+  { value: 'send_email', label: 'Send Email', icon: Mail },
+  { value: 'send_notification', label: 'Send Notification', icon: Bell },
+  { value: 'generate_report', label: 'Generate Report', icon: Settings },
 ];
 
 export default function AutomationPage() {
-  const [rules, setRules] = useState<AutomationRule[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rules, setRules] = useState<AutomationRule[]>(mockRules);
   const [showModal, setShowModal] = useState(false);
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-
-  useEffect(() => {
-    fetchRules();
-  }, []);
-
-  const fetchRules = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('automation_rules')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setRules(data);
-    }
-    setLoading(false);
+  const toggleRule = (id: string) => {
+    setRules(rules.map(rule =>
+      rule.id === id ? { ...rule, isActive: !rule.isActive } : rule
+    ));
   };
 
-  const toggleRule = async (id: string, isActive: boolean) => {
-    const { error } = await supabase
-      .from('automation_rules')
-      .update({ is_active: !isActive, updated_at: new Date().toISOString() })
-      .eq('id', id);
-
-    if (!error) {
-      setRules(rules.map(r => r.id === id ? { ...r, is_active: !isActive } : r));
+  const deleteRule = (id: string) => {
+    if (confirm('Delete this automation rule?')) {
+      setRules(rules.filter(rule => rule.id !== id));
     }
   };
 
-  const deleteRule = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this automation rule?')) return;
+  const formatLastRun = (date: string | null) => {
+    if (!date) return 'Never';
+    const d = new Date(date);
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     
-    const { error } = await supabase.from('automation_rules').delete().eq('id', id);
-    if (!error) {
-      setRules(rules.filter(r => r.id !== id));
-    }
+    if (hours < 1) return 'Just now';
+    if (hours < 24) return `${hours}h ago`;
+    return `${days}d ago`;
   };
 
-  const openEditModal = (rule: AutomationRule) => {
-    setEditingRule(rule);
-    setShowModal(true);
-  };
-
-  const openNewModal = () => {
-    setEditingRule(null);
-    setShowModal(true);
-  };
-
-  const stats = {
-    total: rules.length,
-    active: rules.filter(r => r.is_active).length,
-    inactive: rules.filter(r => !r.is_active).length,
-    totalRuns: rules.reduce((acc, r) => acc + (r.run_count || 0), 0),
-  };
-
-  const getTriggerConfig = (type: string) => {
-    return triggerTypes.find(t => t.value === type) || { value: type, label: type, icon: Zap };
-  };
-
-  const getActionConfig = (type: string) => {
-    return actionTypes.find(a => a.value === type) || { value: type, label: type };
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="spinner" />
-      </div>
-    );
-  }
+  const activeRules = rules.filter(r => r.isActive).length;
+  const totalRuns = rules.reduce((sum, r) => sum + r.runCount, 0);
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      <Link href="/dashboard" className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors group">
-        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-        Back to Dashboard
-      </Link>
-
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-yellow-500 to-orange-500 flex items-center justify-center shadow-lg shadow-yellow-500/20">
+          <Link href="/dashboard" className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+            <ChevronLeft className="w-5 h-5 text-gray-400" />
+          </Link>
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center shadow-lg shadow-yellow-500/20">
             <Zap className="w-7 h-7 text-white" />
           </div>
           <div>
             <h1 className="text-3xl font-bold">
               <span className="text-gradient">Automation</span>
             </h1>
-            <p className="text-gray-400 mt-1">Automate repetitive tasks and workflows</p>
+            <p className="text-gray-400 mt-1">Workflow rules and notifications</p>
           </div>
         </div>
-        <button onClick={openNewModal} className="btn-primary">
+
+        <button 
+          onClick={() => { setEditingRule(null); setShowModal(true); }}
+          className="btn-primary"
+        >
           <Plus className="w-5 h-5" />
           New Rule
         </button>
@@ -157,321 +163,245 @@ export default function AutomationPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
-        <div className="card-premium p-5">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-yellow-500/20 flex items-center justify-center">
-              <Zap className="w-6 h-6 text-yellow-400" />
+        <div className="kpi-card">
+          <div className="flex items-center gap-3">
+            <div className="kpi-icon bg-yellow-500/20">
+              <Zap className="w-5 h-5 text-yellow-400" />
             </div>
             <div>
-              <p className="text-3xl font-bold">{stats.total}</p>
+              <p className="text-2xl font-bold">{rules.length}</p>
               <p className="text-sm text-gray-400">Total Rules</p>
             </div>
           </div>
         </div>
-        <div className="card-premium p-5">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center">
-              <Play className="w-6 h-6 text-green-400" />
+        <div className="kpi-card">
+          <div className="flex items-center gap-3">
+            <div className="kpi-icon bg-green-500/20">
+              <Play className="w-5 h-5 text-green-400" />
             </div>
             <div>
-              <p className="text-3xl font-bold">{stats.active}</p>
+              <p className="text-2xl font-bold">{activeRules}</p>
               <p className="text-sm text-gray-400">Active</p>
             </div>
           </div>
         </div>
-        <div className="card-premium p-5">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gray-500/20 flex items-center justify-center">
-              <Pause className="w-6 h-6 text-gray-400" />
+        <div className="kpi-card">
+          <div className="flex items-center gap-3">
+            <div className="kpi-icon bg-gray-500/20">
+              <Pause className="w-5 h-5 text-gray-400" />
             </div>
             <div>
-              <p className="text-3xl font-bold">{stats.inactive}</p>
-              <p className="text-sm text-gray-400">Inactive</p>
+              <p className="text-2xl font-bold">{rules.length - activeRules}</p>
+              <p className="text-sm text-gray-400">Paused</p>
             </div>
           </div>
         </div>
-        <div className="card-premium p-5">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center">
-              <Bell className="w-6 h-6 text-blue-400" />
+        <div className="kpi-card">
+          <div className="flex items-center gap-3">
+            <div className="kpi-icon bg-blue-500/20">
+              <CheckCircle2 className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <p className="text-3xl font-bold">{stats.totalRuns}</p>
+              <p className="text-2xl font-bold">{totalRuns}</p>
               <p className="text-sm text-gray-400">Total Runs</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Rules Grid */}
-      {rules.length === 0 ? (
-        <div className="card-premium text-center py-16">
-          <Zap className="w-20 h-20 mx-auto mb-4 text-gray-700" />
-          <h3 className="text-xl font-semibold mb-2">No Automation Rules</h3>
-          <p className="text-gray-400 text-sm mb-6">Create your first automation rule to get started</p>
-          <button onClick={openNewModal} className="btn-primary">
-            <Plus className="w-4 h-4" />
-            Create Rule
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-4">
-          {rules.map((rule) => {
-            const trigger = getTriggerConfig(rule.trigger_type);
-            const action = getActionConfig(rule.action_type);
-            const TriggerIcon = trigger.icon;
-
-            return (
-              <div key={rule.id} className={`card-premium p-5 ${!rule.is_active ? 'opacity-60' : ''}`}>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                      rule.is_active ? 'bg-yellow-500/20' : 'bg-gray-500/20'
-                    }`}>
-                      <Zap className={`w-5 h-5 ${rule.is_active ? 'text-yellow-400' : 'text-gray-400'}`} />
+      {/* Rules List */}
+      <div className="space-y-4">
+        {rules.map((rule) => (
+          <div
+            key={rule.id}
+            className={`card-premium p-6 transition-all ${
+              rule.isActive ? '' : 'opacity-60'
+            }`}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-start gap-4">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                  rule.isActive ? 'bg-yellow-500/20' : 'bg-gray-500/20'
+                }`}>
+                  <Zap className={`w-6 h-6 ${
+                    rule.isActive ? 'text-yellow-400' : 'text-gray-500'
+                  }`} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg">{rule.name}</h3>
+                  <p className="text-sm text-gray-500 mt-1">{rule.description}</p>
+                  
+                  <div className="flex items-center gap-6 mt-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">Trigger:</span>
+                      <span className="text-xs text-gray-300 bg-white/5 px-2 py-1 rounded">
+                        {rule.trigger}
+                      </span>
                     </div>
-                    <div>
-                      <h3 className="font-semibold">{rule.rule_name}</h3>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        rule.is_active ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'
-                      }`}>
-                        {rule.is_active ? 'Active' : 'Inactive'}
+                    <ArrowRight className="w-4 h-4 text-gray-600" />
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">Action:</span>
+                      <span className="text-xs text-gray-300 bg-white/5 px-2 py-1 rounded">
+                        {rule.action}
                       </span>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => toggleRule(rule.id, rule.is_active)}
-                      className={`p-2 rounded-lg transition-colors ${
-                        rule.is_active 
-                          ? 'hover:bg-yellow-500/20 text-yellow-400' 
-                          : 'hover:bg-green-500/20 text-green-400'
-                      }`}
-                      title={rule.is_active ? 'Disable' : 'Enable'}
-                    >
-                      {rule.is_active ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                    </button>
-                    <button
-                      onClick={() => openEditModal(rule)}
-                      className="p-2 hover:bg-white/5 rounded-lg transition-colors text-gray-400 hover:text-white"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => deleteRule(rule.id)}
-                      className="p-2 hover:bg-red-500/10 rounded-lg transition-colors text-gray-400 hover:text-red-400"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
 
-                {rule.description && (
-                  <p className="text-sm text-gray-400 mb-4">{rule.description}</p>
-                )}
-
-                {/* Trigger → Action Flow */}
-                <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
-                  <div className="flex items-center gap-2 flex-1">
-                    <TriggerIcon className="w-4 h-4 text-blue-400" />
-                    <span className="text-sm">{trigger.label}</span>
+                  <div className="flex items-center gap-4 mt-4 text-xs text-gray-500">
+                    <span>Last run: {formatLastRun(rule.lastRun)}</span>
+                    <span>•</span>
+                    <span>{rule.runCount} total runs</span>
                   </div>
-                  <ArrowRight className="w-4 h-4 text-gray-500" />
-                  <div className="flex items-center gap-2 flex-1">
-                    <Bell className="w-4 h-4 text-green-400" />
-                    <span className="text-sm">{action.label}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between mt-4 text-xs text-gray-500">
-                  <span>Runs: {rule.run_count || 0}</span>
-                  <span>
-                    Last run: {rule.last_run_at 
-                      ? new Date(rule.last_run_at).toLocaleDateString() 
-                      : 'Never'}
-                  </span>
                 </div>
               </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => toggleRule(rule.id)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    rule.isActive 
+                      ? 'text-green-400 hover:bg-green-500/10' 
+                      : 'text-gray-500 hover:bg-white/5'
+                  }`}
+                  title={rule.isActive ? 'Pause' : 'Activate'}
+                >
+                  {rule.isActive ? (
+                    <ToggleRight className="w-6 h-6" />
+                  ) : (
+                    <ToggleLeft className="w-6 h-6" />
+                  )}
+                </button>
+                <button
+                  onClick={() => { setEditingRule(rule); setShowModal(true); }}
+                  className="p-2 hover:bg-white/10 rounded-lg text-gray-400"
+                  title="Edit"
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => deleteRule(rule.id)}
+                  className="p-2 hover:bg-red-500/10 rounded-lg text-gray-400 hover:text-red-400"
+                  title="Delete"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Quick Templates */}
+      <div className="card-premium p-6">
+        <h3 className="text-lg font-semibold mb-4">Quick Templates</h3>
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            {
+              title: 'Deadline Alert',
+              description: 'Notify team before project deadlines',
+              trigger: triggerTypes[0],
+              action: actionTypes[0],
+            },
+            {
+              title: 'Status Update',
+              description: 'Alert on project status changes',
+              trigger: triggerTypes[1],
+              action: actionTypes[1],
+            },
+            {
+              title: 'Weekly Report',
+              description: 'Automated weekly progress report',
+              trigger: triggerTypes[3],
+              action: actionTypes[2],
+            },
+          ].map((template, i) => {
+            const TriggerIcon = template.trigger.icon;
+            const ActionIcon = template.action.icon;
+            
+            return (
+              <button
+                key={i}
+                onClick={() => setShowModal(true)}
+                className="p-4 bg-white/5 rounded-xl border border-white/5 hover:border-white/10 text-left transition-all group"
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <TriggerIcon className="w-4 h-4 text-yellow-400" />
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-gray-600" />
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <ActionIcon className="w-4 h-4 text-blue-400" />
+                  </div>
+                </div>
+                <h4 className="font-medium">{template.title}</h4>
+                <p className="text-xs text-gray-500 mt-1">{template.description}</p>
+              </button>
             );
           })}
         </div>
-      )}
-
-      {/* Modal */}
-      {showModal && (
-        <AutomationModal
-          rule={editingRule}
-          onClose={() => {
-            setShowModal(false);
-            setEditingRule(null);
-          }}
-          onSaved={() => {
-            setShowModal(false);
-            setEditingRule(null);
-            fetchRules();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function AutomationModal({
-  rule,
-  onClose,
-  onSaved,
-}: {
-  rule: AutomationRule | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const isEditing = !!rule;
-  const [formData, setFormData] = useState({
-    rule_name: rule?.rule_name || '',
-    description: rule?.description || '',
-    trigger_type: rule?.trigger_type || 'status_change',
-    action_type: rule?.action_type || 'send_notification',
-    is_active: rule?.is_active ?? true,
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.rule_name.trim()) {
-      setError('Rule name is required');
-      return;
-    }
-
-    setSaving(true);
-    setError('');
-
-    const data = {
-      rule_name: formData.rule_name.trim(),
-      description: formData.description.trim() || null,
-      trigger_type: formData.trigger_type,
-      trigger_config: {},
-      action_type: formData.action_type,
-      action_config: {},
-      is_active: formData.is_active,
-      updated_at: new Date().toISOString(),
-    };
-
-    try {
-      let result;
-      if (isEditing) {
-        result = await supabase.from('automation_rules').update(data).eq('id', rule.id);
-      } else {
-        result = await supabase.from('automation_rules').insert(data);
-      }
-
-      if (result.error) throw result.error;
-      onSaved();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save rule');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content p-6 max-w-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold">{isEditing ? 'Edit Rule' : 'New Automation Rule'}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Rule Name *</label>
-            <input
-              type="text"
-              value={formData.rule_name}
-              onChange={(e) => setFormData({ ...formData, rule_name: e.target.value })}
-              className="input-premium"
-              placeholder="e.g., Notify on task completion"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Description</label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="input-premium h-20 resize-none"
-              placeholder="What does this rule do?"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">When this happens (Trigger)</label>
-            <select
-              value={formData.trigger_type}
-              onChange={(e) => setFormData({ ...formData, trigger_type: e.target.value })}
-              className="select-premium"
-            >
-              {triggerTypes.map(t => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Do this (Action)</label>
-            <select
-              value={formData.action_type}
-              onChange={(e) => setFormData({ ...formData, action_type: e.target.value })}
-              className="select-premium"
-            >
-              {actionTypes.map(a => (
-                <option key={a.value} value={a.value}>{a.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-gray-300">Active</label>
-            <button
-              type="button"
-              onClick={() => setFormData({ ...formData, is_active: !formData.is_active })}
-              className={`w-12 h-6 rounded-full transition-colors relative ${
-                formData.is_active ? 'bg-[#00AEEF]' : 'bg-gray-600'
-              }`}
-            >
-              <span
-                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${
-                  formData.is_active ? 'right-1' : 'left-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : isEditing ? 'Update Rule' : 'Create Rule'}
-            </button>
-          </div>
-        </form>
       </div>
+
+      {/* Modal placeholder */}
+      {showModal && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal-content p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-xl font-bold mb-4">
+              {editingRule ? 'Edit Rule' : 'Create New Rule'}
+            </h2>
+            <p className="text-gray-500 mb-6">
+              Configure automation triggers and actions for your workflow.
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Rule Name</label>
+                <input
+                  type="text"
+                  defaultValue={editingRule?.name || ''}
+                  className="input-premium"
+                  placeholder="Enter rule name"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                <textarea
+                  defaultValue={editingRule?.description || ''}
+                  className="input-premium h-20 resize-none"
+                  placeholder="Describe what this rule does"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Trigger</label>
+                <select className="select-premium">
+                  {triggerTypes.map(t => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Action</label>
+                <select className="select-premium">
+                  {actionTypes.map(a => (
+                    <option key={a.value} value={a.value}>{a.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/5">
+              <button onClick={() => setShowModal(false)} className="btn-secondary">
+                Cancel
+              </button>
+              <button onClick={() => setShowModal(false)} className="btn-primary">
+                {editingRule ? 'Update Rule' : 'Create Rule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

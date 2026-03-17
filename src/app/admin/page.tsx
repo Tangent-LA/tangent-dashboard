@@ -3,58 +3,60 @@
 import { useState, useEffect } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Shield,
   ChevronLeft,
   Users,
   Settings,
-  Activity,
+  Bell,
+  Database,
   Key,
+  Mail,
+  Globe,
+  Palette,
+  User,
+  Plus,
   Edit,
   Trash2,
-  X,
   Check,
-  AlertTriangle,
-  UserPlus,
-  Search,
+  X,
+  Save,
+  Lock,
 } from 'lucide-react';
 
-type UserProfile = {
+type Profile = {
   id: string;
-  full_name: string | null;
   email: string;
-  role: string;
-  job_title: string | null;
+  full_name: string | null;
+  role: string | null;
+  team_id: string | null;
   is_active: boolean;
   created_at: string;
-  teams?: { team_name: string } | null;
 };
 
-type ActivityLog = {
+type Team = {
   id: string;
-  action: string;
-  entity_type: string;
-  entity_name: string;
-  created_at: string;
-  profiles?: { full_name: string | null; email: string } | null;
+  team_name: string;
+  color: string;
 };
 
-type TabType = 'users' | 'roles' | 'settings' | 'logs';
-
-const rolePermissions: Record<string, string[]> = {
-  admin: ['View All', 'Edit All', 'Delete All', 'Manage Users', 'System Settings', 'View Logs'],
-  manager: ['View All', 'Edit Projects', 'Manage Team', 'View Reports', 'BIM Management'],
-  member: ['View Assigned', 'Edit Own Tasks', 'View Team'],
-};
+const roleOptions = [
+  { value: 'admin', label: 'Administrator', description: 'Full access to all features' },
+  { value: 'manager', label: 'Project Manager', description: 'Manage projects and teams' },
+  { value: 'bim_coordinator', label: 'BIM Coordinator', description: 'Manage BIM deliverables' },
+  { value: 'team_member', label: 'Team Member', description: 'View and update assigned tasks' },
+  { value: 'viewer', label: 'Viewer', description: 'Read-only access' },
+];
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState<TabType>('users');
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'settings' | 'profile'>('users');
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [editingUser, setEditingUser] = useState<Profile | null>(null);
+  const searchParams = useSearchParams();
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -62,92 +64,42 @@ export default function AdminPage() {
   );
 
   useEffect(() => {
-    if (activeTab === 'users') {
-      fetchUsers();
-    } else if (activeTab === 'logs') {
-      fetchLogs();
-    } else {
-      setLoading(false);
+    fetchData();
+    const tab = searchParams.get('tab');
+    if (tab === 'profile' || tab === 'settings') {
+      setActiveTab(tab);
     }
-  }, [activeTab]);
+  }, [searchParams]);
 
-  const fetchUsers = async () => {
+  const fetchData = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, email, role, job_title, is_active, created_at, teams(team_name)')
-      .order('created_at', { ascending: false });
+    const [profilesRes, teamsRes] = await Promise.all([
+      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+      supabase.from('teams').select('*').eq('is_active', true),
+    ]);
 
-    if (!error && data) {
-      setUsers(data as UserProfile[]);
-    }
+    if (profilesRes.data) setProfiles(profilesRes.data);
+    if (teamsRes.data) setTeams(teamsRes.data);
     setLoading(false);
   };
 
-  const fetchLogs = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('activity_logs')
-      .select('id, action, entity_type, entity_name, created_at, profiles(full_name, email)')
-      .order('created_at', { ascending: false })
-      .limit(100);
-
-    if (!error && data) {
-      setLogs(data as ActivityLog[]);
-    }
-    setLoading(false);
-  };
-
-  const updateUserRole = async (userId: string, newRole: string) => {
+  const toggleUserActive = async (userId: string, currentStatus: boolean) => {
     const { error } = await supabase
       .from('profiles')
-      .update({ role: newRole, updated_at: new Date().toISOString() })
+      .update({ is_active: !currentStatus })
       .eq('id', userId);
-
     if (!error) {
-      setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      setProfiles(profiles.map(p => 
+        p.id === userId ? { ...p, is_active: !currentStatus } : p
+      ));
     }
   };
-
-  const toggleUserActive = async (userId: string, isActive: boolean) => {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ is_active: !isActive, updated_at: new Date().toISOString() })
-      .eq('id', userId);
-
-    if (!error) {
-      setUsers(users.map(u => u.id === userId ? { ...u, is_active: !isActive } : u));
-    }
-  };
-
-  const deleteUser = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
-    
-    const { error } = await supabase.from('profiles').delete().eq('id', userId);
-    if (!error) {
-      setUsers(users.filter(u => u.id !== userId));
-    }
-  };
-
-  const openEditModal = (user: UserProfile) => {
-    setEditingUser(user);
-    setShowEditModal(true);
-  };
-
-  const filteredUsers = users.filter(user => {
-    const query = searchQuery.toLowerCase();
-    return (
-      (user.full_name?.toLowerCase().includes(query)) ||
-      user.email.toLowerCase().includes(query) ||
-      user.role.toLowerCase().includes(query)
-    );
-  });
 
   const tabs = [
     { key: 'users', label: 'User Management', icon: Users },
-    { key: 'roles', label: 'Roles & Permissions', icon: Key },
+    { key: 'roles', label: 'Roles & Permissions', icon: Shield },
     { key: 'settings', label: 'System Settings', icon: Settings },
-    { key: 'logs', label: 'Activity Logs', icon: Activity },
+    { key: 'profile', label: 'My Profile', icon: User },
   ];
 
   if (loading) {
@@ -160,55 +112,54 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      <Link href="/dashboard" className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors group">
-        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-        Back to Dashboard
-      </Link>
-
-      <div className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-lg shadow-red-500/20">
-          <Shield className="w-7 h-7 text-white" />
-        </div>
-        <div>
-          <h1 className="text-3xl font-bold">
-            <span className="text-gradient">Admin Panel</span>
-          </h1>
-          <p className="text-gray-400 mt-1">Manage users, roles, and system settings</p>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/dashboard" className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+            <ChevronLeft className="w-5 h-5 text-gray-400" />
+          </Link>
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-lg shadow-red-500/20">
+            <Shield className="w-7 h-7 text-white" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold">
+              <span className="text-gradient">Admin Panel</span>
+            </h1>
+            <p className="text-gray-400 mt-1">System administration & settings</p>
+          </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 p-1 bg-white/5 rounded-xl">
-        {tabs.map((tab) => (
+      <div className="flex items-center gap-2 p-1 bg-white/5 rounded-xl w-fit">
+        {tabs.map(({ key, label, icon: Icon }) => (
           <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key as TabType)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
-              activeTab === tab.key
+            key={key}
+            onClick={() => setActiveTab(key as any)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              activeTab === key
                 ? 'bg-[#00AEEF] text-white shadow-lg shadow-[#00AEEF]/20'
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
+            <Icon className="w-4 h-4" />
+            {label}
           </button>
         ))}
       </div>
 
-      {/* User Management Tab */}
+      {/* Content */}
       {activeTab === 'users' && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-              <input
-                type="text"
-                placeholder="Search users..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="input-premium pl-12 w-full"
-              />
-            </div>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Team Members</h2>
+            <button 
+              onClick={() => { setEditingUser(null); setShowUserModal(true); }}
+              className="btn-primary"
+            >
+              <Plus className="w-4 h-4" />
+              Add User
+            </button>
           </div>
 
           <div className="card-premium overflow-hidden">
@@ -220,65 +171,71 @@ export default function AdminPage() {
                   <th>Team</th>
                   <th>Status</th>
                   <th>Joined</th>
-                  <th>Actions</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((user) => (
-                  <tr key={user.id} className={!user.is_active ? 'opacity-50' : ''}>
+                {profiles.map(profile => (
+                  <tr key={profile.id}>
                     <td>
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#00AEEF] to-[#0077a3] flex items-center justify-center text-white font-medium">
-                          {user.full_name?.charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase()}
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                          <span className="text-white font-semibold">
+                            {profile.full_name?.[0] || profile.email[0].toUpperCase()}
+                          </span>
                         </div>
                         <div>
-                          <p className="font-medium">{user.full_name || 'No Name'}</p>
-                          <p className="text-xs text-gray-500">{user.email}</p>
+                          <p className="font-medium">{profile.full_name || 'Unnamed'}</p>
+                          <p className="text-xs text-gray-500">{profile.email}</p>
                         </div>
                       </div>
                     </td>
                     <td>
-                      <select
-                        value={user.role}
-                        onChange={(e) => updateUserRole(user.id, e.target.value)}
-                        className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1 cursor-pointer"
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="manager">Manager</option>
-                        <option value="member">Member</option>
-                      </select>
+                      <span className="text-sm text-gray-400 capitalize">
+                        {profile.role?.replace('_', ' ') || 'Team Member'}
+                      </span>
                     </td>
                     <td className="text-gray-400">
-                      {user.teams?.team_name || '-'}
+                      {teams.find(t => t.id === profile.team_id)?.team_name || '-'}
                     </td>
                     <td>
-                      <button
-                        onClick={() => toggleUserActive(user.id, user.is_active)}
-                        className={`text-xs px-2 py-1 rounded-full ${
-                          user.is_active
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-red-500/20 text-red-400'
-                        }`}
-                      >
-                        {user.is_active ? 'Active' : 'Inactive'}
-                      </button>
+                      <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full ${
+                        profile.is_active 
+                          ? 'bg-green-500/20 text-green-400' 
+                          : 'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${
+                          profile.is_active ? 'bg-green-400' : 'bg-gray-400'
+                        }`} />
+                        {profile.is_active ? 'Active' : 'Inactive'}
+                      </span>
                     </td>
-                    <td className="text-gray-400">
-                      {new Date(user.created_at).toLocaleDateString()}
+                    <td className="text-gray-500 text-sm">
+                      {new Date(profile.created_at).toLocaleDateString('en-GB', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
                     </td>
                     <td>
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => openEditModal(user)}
-                          className="p-2 hover:bg-white/5 rounded-lg transition-colors text-gray-400 hover:text-white"
+                          onClick={() => { setEditingUser(profile); setShowUserModal(true); }}
+                          className="p-1.5 hover:bg-white/10 rounded-lg"
+                          title="Edit"
                         >
-                          <Edit className="w-4 h-4" />
+                          <Edit className="w-4 h-4 text-gray-400" />
                         </button>
                         <button
-                          onClick={() => deleteUser(user.id)}
-                          className="p-2 hover:bg-red-500/10 rounded-lg transition-colors text-gray-400 hover:text-red-400"
+                          onClick={() => toggleUserActive(profile.id, profile.is_active)}
+                          className="p-1.5 hover:bg-white/10 rounded-lg"
+                          title={profile.is_active ? 'Deactivate' : 'Activate'}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          {profile.is_active ? (
+                            <X className="w-4 h-4 text-gray-400" />
+                          ) : (
+                            <Check className="w-4 h-4 text-gray-400" />
+                          )}
                         </button>
                       </div>
                     </td>
@@ -290,159 +247,252 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Roles Tab */}
       {activeTab === 'roles' && (
-        <div className="grid grid-cols-3 gap-4">
-          {Object.entries(rolePermissions).map(([role, permissions]) => (
-            <div key={role} className="card-premium p-6">
+        <div className="space-y-6">
+          <h2 className="text-lg font-semibold">Roles & Permissions</h2>
+          
+          <div className="grid grid-cols-2 gap-6">
+            {roleOptions.map(role => (
+              <div key={role.value} className="card-premium p-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
+                    <Shield className="w-6 h-6 text-purple-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold">{role.label}</h3>
+                    <p className="text-sm text-gray-500 mt-1">{role.description}</p>
+                    <div className="flex items-center gap-2 mt-3">
+                      <span className="text-xs text-gray-500">
+                        {profiles.filter(p => p.role === role.value).length} users
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'settings' && (
+        <div className="space-y-6">
+          <h2 className="text-lg font-semibold">System Settings</h2>
+          
+          <div className="grid grid-cols-2 gap-6">
+            <div className="card-premium p-6">
               <div className="flex items-center gap-3 mb-4">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                  role === 'admin' ? 'bg-red-500/20' :
-                  role === 'manager' ? 'bg-blue-500/20' : 'bg-green-500/20'
-                }`}>
-                  <Key className={`w-5 h-5 ${
-                    role === 'admin' ? 'text-red-400' :
-                    role === 'manager' ? 'text-blue-400' : 'text-green-400'
-                  }`} />
+                <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
+                  <Database className="w-5 h-5 text-blue-400" />
                 </div>
                 <div>
-                  <h3 className="font-semibold capitalize">{role}</h3>
-                  <p className="text-xs text-gray-500">{permissions.length} permissions</p>
+                  <h3 className="font-semibold">Database</h3>
+                  <p className="text-xs text-gray-500">Supabase PostgreSQL</p>
                 </div>
               </div>
-
-              <div className="space-y-2">
-                {permissions.map((perm) => (
-                  <div key={perm} className="flex items-center gap-2 text-sm">
-                    <Check className="w-4 h-4 text-green-400" />
-                    <span className="text-gray-300">{perm}</span>
-                  </div>
-                ))}
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Status</span>
+                  <span className="text-green-400">Connected</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Region</span>
+                  <span className="text-gray-300">ap-southeast-1</span>
+                </div>
               </div>
             </div>
-          ))}
+
+            <div className="card-premium p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
+                  <Mail className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Email Service</h3>
+                  <p className="text-xs text-gray-500">Resend SMTP</p>
+                </div>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Status</span>
+                  <span className="text-yellow-400">Pending Setup</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Domain</span>
+                  <span className="text-gray-300">tangentlandscape.com</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="card-premium p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center">
+                  <Bell className="w-5 h-5 text-green-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Notifications</h3>
+                  <p className="text-xs text-gray-500">Alert settings</p>
+                </div>
+              </div>
+              <div className="space-y-3 text-sm">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-gray-400">Email notifications</span>
+                  <input type="checkbox" defaultChecked className="toggle" />
+                </label>
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-gray-400">Deadline alerts</span>
+                  <input type="checkbox" defaultChecked className="toggle" />
+                </label>
+              </div>
+            </div>
+
+            <div className="card-premium p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center">
+                  <Palette className="w-5 h-5 text-cyan-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Branding</h3>
+                  <p className="text-xs text-gray-500">Company settings</p>
+                </div>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Primary Color</span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded bg-[#00AEEF]" />
+                    <span className="text-gray-300">#00AEEF</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Theme</span>
+                  <span className="text-gray-300">Dark</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Settings Tab */}
-      {activeTab === 'settings' && (
-        <div className="space-y-4">
-          <div className="card-premium p-6">
-            <h3 className="font-semibold mb-4">Notification Settings</h3>
+      {activeTab === 'profile' && (
+        <div className="max-w-2xl">
+          <h2 className="text-lg font-semibold mb-6">My Profile</h2>
+          
+          <div className="card-premium p-6 space-y-6">
+            <div className="flex items-center gap-6">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                <span className="text-white text-2xl font-bold">A</span>
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold">Anshu Jalaludeen</h3>
+                <p className="text-gray-400">BIM Coordinator</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Full Name</label>
+                <input
+                  type="text"
+                  defaultValue="Anshu Jalaludeen"
+                  className="input-premium"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                <input
+                  type="email"
+                  defaultValue="anshu@tangent.com"
+                  className="input-premium"
+                  disabled
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Role</label>
+                <input
+                  type="text"
+                  defaultValue="BIM Coordinator"
+                  className="input-premium"
+                  disabled
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Team</label>
+                <input
+                  type="text"
+                  defaultValue="BIM Team"
+                  className="input-premium"
+                  disabled
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-white/5 flex justify-end">
+              <button className="btn-primary">
+                <Save className="w-4 h-4" />
+                Save Changes
+              </button>
+            </div>
+          </div>
+
+          <div className="card-premium p-6 mt-6">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <Lock className="w-4 h-4" />
+              Change Password
+            </h3>
             <div className="space-y-4">
-              {[
-                { label: 'Email notifications for task assignments', key: 'email_task' },
-                { label: 'Email notifications for project updates', key: 'email_project' },
-                { label: 'Desktop notifications', key: 'desktop' },
-                { label: 'Weekly summary reports', key: 'weekly_report' },
-              ].map((setting) => (
-                <div key={setting.key} className="flex items-center justify-between">
-                  <span className="text-gray-300">{setting.label}</span>
-                  <button
-                    className="w-12 h-6 rounded-full bg-[#00AEEF] relative"
-                    onClick={() => {}}
-                  >
-                    <span className="absolute right-1 top-1 w-4 h-4 rounded-full bg-white" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="card-premium p-6">
-            <h3 className="font-semibold mb-4">Security Settings</h3>
-            <div className="space-y-4">
-              {[
-                { label: 'Two-factor authentication required', key: '2fa' },
-                { label: 'Session timeout after 30 minutes', key: 'timeout' },
-                { label: 'Audit logging enabled', key: 'audit' },
-              ].map((setting) => (
-                <div key={setting.key} className="flex items-center justify-between">
-                  <span className="text-gray-300">{setting.label}</span>
-                  <button
-                    className="w-12 h-6 rounded-full bg-[#00AEEF] relative"
-                    onClick={() => {}}
-                  >
-                    <span className="absolute right-1 top-1 w-4 h-4 rounded-full bg-white" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Logs Tab */}
-      {activeTab === 'logs' && (
-        <div className="card-premium p-6">
-          <div className="space-y-3">
-            {logs.length === 0 ? (
-              <div className="text-center py-8">
-                <Activity className="w-12 h-12 mx-auto mb-3 text-gray-600" />
-                <p className="text-gray-400">No activity logs found</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Current Password</label>
+                <input type="password" className="input-premium" />
               </div>
-            ) : (
-              logs.map((log) => (
-                <div key={log.id} className="flex items-start gap-3 p-3 bg-white/5 rounded-xl">
-                  <div className="w-8 h-8 rounded-full bg-[#00AEEF]/20 flex items-center justify-center flex-shrink-0">
-                    <Activity className="w-4 h-4 text-[#00AEEF]" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm">
-                      <span className="font-medium">
-                        {log.profiles?.full_name || log.profiles?.email || 'Someone'}
-                      </span>
-                      {' '}<span className="text-gray-400">{log.action}</span>{' '}
-                      <span className="text-[#00AEEF]">{log.entity_name}</span>
-                      <span className="text-gray-500"> ({log.entity_type})</span>
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {new Date(log.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              ))
-            )}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">New Password</label>
+                <input type="password" className="input-premium" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Confirm New Password</label>
+                <input type="password" className="input-premium" />
+              </div>
+              <button className="btn-secondary">
+                Update Password
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Edit User Modal */}
-      {showEditModal && editingUser && (
-        <EditUserModal
+      {/* User Modal */}
+      {showUserModal && (
+        <UserModal
           user={editingUser}
-          onClose={() => {
-            setShowEditModal(false);
-            setEditingUser(null);
-          }}
-          onSaved={() => {
-            setShowEditModal(false);
-            setEditingUser(null);
-            fetchUsers();
-          }}
+          teams={teams}
+          onClose={() => { setShowUserModal(false); setEditingUser(null); }}
+          onSaved={() => { setShowUserModal(false); setEditingUser(null); fetchData(); }}
         />
       )}
     </div>
   );
 }
 
-function EditUserModal({
+function UserModal({
   user,
+  teams,
   onClose,
   onSaved,
 }: {
-  user: UserProfile;
+  user: Profile | null;
+  teams: Team[];
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const isEditing = !!user;
   const [formData, setFormData] = useState({
-    full_name: user.full_name || '',
-    job_title: user.job_title || '',
-    role: user.role,
-    is_active: user.is_active,
+    full_name: user?.full_name || '',
+    email: user?.email || '',
+    role: user?.role || 'team_member',
+    team_id: user?.team_id || '',
+    is_active: user?.is_active ?? true,
   });
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -452,56 +502,37 @@ function EditUserModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setError('');
 
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({
-        full_name: formData.full_name.trim() || null,
-        job_title: formData.job_title.trim() || null,
-        role: formData.role,
-        is_active: formData.is_active,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id);
-
-    if (updateError) {
-      setError(updateError.message);
-    } else {
+    try {
+      if (isEditing) {
+        await supabase.from('profiles').update({
+          full_name: formData.full_name,
+          role: formData.role,
+          team_id: formData.team_id || null,
+          is_active: formData.is_active,
+        }).eq('id', user.id);
+      }
       onSaved();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content p-6 max-w-md" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold">Edit User</h2>
-          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+          <h2 className="text-xl font-bold">{isEditing ? 'Edit User' : 'Add User'}</h2>
+          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-            {error}
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Email</label>
-            <input
-              type="text"
-              value={user.email}
-              className="input-premium opacity-50"
-              disabled
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Full Name</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Full Name</label>
             <input
               type="text"
               value={formData.full_name}
@@ -512,52 +543,48 @@ function EditUserModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Job Title</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
             <input
-              type="text"
-              value={formData.job_title}
-              onChange={(e) => setFormData({ ...formData, job_title: e.target.value })}
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="input-premium"
-              placeholder="Enter job title"
+              placeholder="Enter email"
+              disabled={isEditing}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Role</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Role</label>
             <select
               value={formData.role}
               onChange={(e) => setFormData({ ...formData, role: e.target.value })}
               className="select-premium"
             >
-              <option value="admin">Admin</option>
-              <option value="manager">Manager</option>
-              <option value="member">Member</option>
+              {roleOptions.map(role => (
+                <option key={role.value} value={role.value}>{role.label}</option>
+              ))}
             </select>
           </div>
 
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-gray-300">Active</label>
-            <button
-              type="button"
-              onClick={() => setFormData({ ...formData, is_active: !formData.is_active })}
-              className={`w-12 h-6 rounded-full transition-colors relative ${
-                formData.is_active ? 'bg-[#00AEEF]' : 'bg-gray-600'
-              }`}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Team</label>
+            <select
+              value={formData.team_id}
+              onChange={(e) => setFormData({ ...formData, team_id: e.target.value })}
+              className="select-premium"
             >
-              <span
-                className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${
-                  formData.is_active ? 'right-1' : 'left-1'
-                }`}
-              />
-            </button>
+              <option value="">No team assigned</option>
+              {teams.map(team => (
+                <option key={team.id} value={team.id}>{team.team_name}</option>
+              ))}
+            </select>
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Cancel
-            </button>
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : 'Update User'}
+              {saving ? 'Saving...' : isEditing ? 'Update User' : 'Add User'}
             </button>
           </div>
         </form>
