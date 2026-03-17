@@ -15,7 +15,7 @@ import {
 import { useStore } from '@/lib/store';
 import { getSupabase } from '@/lib/supabase';
 import { calculateStats, filterProjects, cn } from '@/lib/utils';
-import type { Project, Team, DashboardStats } from '@/types';
+import type { Project, ProjectWithDetails, Team, DashboardStats } from '@/types';
 import { StageChart } from '@/components/charts/StageChart';
 import { PriorityChart } from '@/components/charts/PriorityChart';
 import { WeeklyChart } from '@/components/charts/WeeklyChart';
@@ -55,7 +55,7 @@ export default function DashboardClient() {
         .order('deadline', { ascending: true });
 
       if (projectsError) throw projectsError;
-      setProjects(projectsData as Project[]);
+     setProjects(projectsData as ProjectWithDetails[]);
 
       const { data: teamsData, error: teamsError } = await supabase
         .from('teams')
