@@ -443,6 +443,16 @@ export interface BIMSubmission {
 // DASHBOARD
 // =====================================================
 
+export interface DashboardStats {
+  totalProjects: number;
+  completedProjects: number;
+  inProgressProjects: number;
+  overdueProjects: number;
+  projectsByStage: Record<string, number>;
+  projectsByPriority: Record<string, number>;
+  weeklySubmissions: { week: string; count: number }[];
+}
+
 export interface DashboardWidget {
   id: string;
   type: string;
