@@ -77,7 +77,7 @@ export default function DashboardClient() {
     router.push('/dashboard/projects');
   };
 
-  const filteredProjects = filterProjects(projects, {   search: filters.search,   status: filters.status?.[0],   priority: filters.priority?.[0],   stage: filters.stage?.[0] as string,   team_id: filters.team_id, });
+  const filteredProjects = filterProjects(projects, filters as any);
 
   const statCards = [
     { label: 'Total Projects', value: stats?.totalProjects || 0, icon: FolderKanban, color: 'blue', trend: '+12%', trendUp: true },
