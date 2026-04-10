@@ -1,12 +1,16 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export default function Dashboard() {
   const [sessions, setSessions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const supabase = createClientComponentClient()
 
   useEffect(() => {
     fetchSessions()
@@ -115,21 +119,21 @@ export default function Dashboard() {
                 {session.autodesk_email && (
                   <div className="flex items-center text-sm">
                     <span className="text-gray-500 w-24">Email:</span>
-                    <span className="text-gray-900 truncate">{session.autodesk_email}</span>
+                    <span className="text-gray-900 truncate text-xs">{session.autodesk_email}</span>
                   </div>
                 )}
                 
                 {session.current_project && (
                   <div className="flex items-center text-sm">
                     <span className="text-gray-500 w-24">Project:</span>
-                    <span className="text-cyan-600 font-medium truncate">{session.current_project}</span>
+                    <span className="text-cyan-600 font-medium truncate text-xs">{session.current_project}</span>
                   </div>
                 )}
 
                 {session.revit_version && (
                   <div className="flex items-center text-sm">
                     <span className="text-gray-500 w-24">Revit:</span>
-                    <span className="text-gray-700">{session.revit_version}</span>
+                    <span className="text-gray-700 text-xs">{session.revit_version}</span>
                   </div>
                 )}
 
@@ -137,7 +141,7 @@ export default function Dashboard() {
                   <div className="flex items-center text-sm">
                     <span className="text-red-500 w-24">📞 In meeting</span>
                     {session.meeting_app && (
-                      <span className="text-gray-700">({session.meeting_app})</span>
+                      <span className="text-gray-700 text-xs">({session.meeting_app})</span>
                     )}
                   </div>
                 )}
